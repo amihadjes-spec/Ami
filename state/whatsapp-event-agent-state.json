@@ -1,0 +1,11 @@
+{
+  "pending_events": [],
+  "notify_queued": [],
+  "issue_reported": [
+    {
+      "issue_key": "green-api-env-vars-missing",
+      "first_reported_at": "2026-07-06T07:57:19+03:00",
+      "description": "משתני הסביבה ID_INSTANCE / API_TOKEN_INSTANCE / apiUrl (Green-API) אינם מוגדרים בסביבת ה-trigger. לא ניתן לבצע polling מול receiveNotification בלעדיהם. יש להגדיר אותם כ-secrets עבור ה-trigger/routine, ולוודא שגם ה-connector Google Calendar מופעל (ראו 'חשוב — הפעלת ה-connector מחדש בכל יצירת trigger חדש' במפרט)."
+    }
+  ]
+}
