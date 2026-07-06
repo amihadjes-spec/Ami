@@ -141,3 +141,13 @@ session שנוצר על ידי הטריגר התקופתי, ובין אם שיח
 
 מומש כ-trigger מתוזמן (cron) דרך claude-code-remote, שיוצר session חדש בכל הפעלה
 ומריץ את התהליך שמתואר למעלה מול כלי ה-MCP של Gmail ו-Google Calendar.
+
+### חשוב — הפעלת ה-connectors מחדש בכל יצירת trigger חדש
+
+`create_trigger`/`update_trigger` לא חושפים פרמטר לקביעת אילו MCP connectors
+(Gmail, Google Calendar) מחוברים ל-trigger — זו הגדרה ברמת ה-routine/session
+שמנוהלת רק דרך ה-UI של claude-code-remote, ולא עוברת אוטומטית מ-trigger ישן
+ל-trigger חדש שמחליף אותו. **בכל פעם שנוצר מחדש trigger** (למשל כי צריך לשנות
+את ה-prompt, וה-API לא תומך בעריכת prompt קיים) — יש לוודא ידנית בממשק
+שה-connectors Gmail ו-Google Calendar מופעלים (enabled) עבור ה-trigger/routine
+החדש, אחרת ההרצה נכשלת גם אם ה-connectors מחוברים ברמת הארגון.
