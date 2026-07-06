@@ -3,9 +3,9 @@
   "notify_queued": [],
   "issue_reported": [
     {
-      "issue_key": "green-api-env-vars-missing",
-      "first_reported_at": "2026-07-06T07:57:19+03:00",
-      "description": "משתני הסביבה ID_INSTANCE / API_TOKEN_INSTANCE / apiUrl (Green-API) אינם מוגדרים בסביבת ה-trigger. לא ניתן לבצע polling מול receiveNotification בלעדיהם. יש להגדיר אותם כ-secrets עבור ה-trigger/routine, ולוודא שגם ה-connector Google Calendar מופעל (ראו 'חשוב — הפעלת ה-connector מחדש בכל יצירת trigger חדש' במפרט)."
+      "issue_key": "green-api-network-egress-blocked",
+      "first_reported_at": "2026-07-06T14:51:31+03:00",
+      "description": "משתני הסביבה ID_INSTANCE/API_TOKEN_INSTANCE/GREEN_API_URL כן מוגדרים כעת (הבעיה הקודמת נפתרה), אך קריאות HTTPS אל api.green-api.com (גם בפורמט https://api.green-api.com וגם בפורמט host ייעודי https://{ID_INSTANCE}.api.green-api.com) נחסמות ברמת ה-proxy הארגוני עם 403 ('gateway answered 403 to CONNECT — policy denial'), בעוד חיבור לדומיינים אחרים (למשל api.github.com) עובד תקין. לא ניתן לבצע polling מול receiveNotification בלעדי גישה לדומיין הזה. יש להוסיף את api.green-api.com (ואת תת-הדומיין הייעודי של המופע) לרשימת ההיתרים (allowlist) של מדיניות ה-egress עבור ה-trigger/routine הזה."
     }
   ]
 }
