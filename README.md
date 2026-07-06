@@ -8,3 +8,6 @@
 - [`agents/email-event-calendar-agent.md`](agents/email-event-calendar-agent.md) —
   סורק את תיבת המייל, מזהה מיילים שמתארים אירוע/פגישה עם תאריך ושעה, בודק התנגשויות
   ביומן, ומציע להוסיף את האירוע — בלי ליצור אותו אוטומטית ללא אישור.
+- [`agents/whatsapp-event-calendar-agent.md`](agents/whatsapp-event-calendar-agent.md) —
+  אותו רעיון, מקור הנתונים הוא הודעות WhatsApp נכנסות (דרך Green-API) במקום מייל;
+  המצב נשמר בקובץ `state/whatsapp-event-agent-state.json` במקום תוויות Gmail.
