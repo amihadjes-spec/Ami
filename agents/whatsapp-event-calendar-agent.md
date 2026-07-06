@@ -185,9 +185,9 @@ Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חו
 Google Calendar.
 
 - **Secrets** נדרשים בסביבת ה-trigger: `ID_INSTANCE`, `API_TOKEN_INSTANCE`
-  (Green-API). ודא גם מהו ה-`apiUrl` הנכון עבור המכשיר (ברוב המקרים
-  `https://api.green-api.com`, אך Green-API עשויה להקצות host ייעודי למופע — יש
-  לבדוק בקונסולת Green-API של המשתמש).
+  (Green-API). ודא גם מהו ה-`apiUrl` הנכון עבור המכשיר (עבור המופע הנוכחי:
+  `https://7107.api.greenapi.com`, אך Green-API עשויה להקצות host ייעודי אחר
+  למופעים אחרים — יש לבדוק בקונסולת Green-API של המשתמש).
 - **Connector** נדרש: **Google Calendar בלבד**. Green-API היא קריאת REST רגילה
   (`Bash`/HTTP) ולא MCP connector, ולכן אינה מופיעה ברשימת ה-connectors שיש להפעיל.
 - **אין סיכון של polling חסר** — Green-API שומרת הודעות בתור עד 24 שעות, כך שגם אם
