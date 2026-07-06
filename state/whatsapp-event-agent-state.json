@@ -3,9 +3,9 @@
   "notify_queued": [],
   "issue_reported": [
     {
-      "issue_key": "green-api-network-egress-blocked",
-      "first_reported_at": "2026-07-06T14:51:31+03:00",
-      "description": "משתני הסביבה ID_INSTANCE/API_TOKEN_INSTANCE/GREEN_API_URL כן מוגדרים כעת (הבעיה הקודמת נפתרה), אך קריאות HTTPS אל api.green-api.com (גם בפורמט https://api.green-api.com וגם בפורמט host ייעודי https://{ID_INSTANCE}.api.green-api.com) נחסמות ברמת ה-proxy הארגוני עם 403 ('gateway answered 403 to CONNECT — policy denial'), בעוד חיבור לדומיינים אחרים (למשל api.github.com) עובד תקין. לא ניתן לבצע polling מול receiveNotification בלעדי גישה לדומיין הזה. יש להוסיף את api.green-api.com (ואת תת-הדומיין הייעודי של המופע) לרשימת ההיתרים (allowlist) של מדיניות ה-egress עבור ה-trigger/routine הזה."
+      "issue_key": "green-api-receive-notification-404",
+      "first_reported_at": "2026-07-06T20:45:09+03:00",
+      "description": "בעיית ה-egress הקודמת (green-api-network-egress-blocked) נפתרה בפועל: קריאות HTTPS אל https://7107.api.greenapi.com (וגם אל https://api.green-api.com / https://api.greenapi.com הגנריים) עוברות כעת ומחזירות תשובות תקינות מהאינסטנס האמיתי — getStateInstance מחזיר {\"stateInstance\":\"authorized\"}, getSettings מחזיר את הגדרות המכשיר, lastIncomingMessages מחזיר []. עם זאת, בדיוק ה-endpoint הדרוש ללולאת ה-polling — receiveNotification (וגם deleteNotification, וגם getAvailabilityInstance) — מחזיר 404 Not Found עם body ריק ובלי כותרות האבטחה/רייט-לימיט שמופיעות בתשובות התקינות (Content-Security-Policy, X-Content-Type-Options וכו' חסרים; זה תואם לתגובת 404 גנרית של ה-API gateway על נתיב לא-קיים, ולא לתגובת שגיאה אפליקטיבית). נבדק מול כל שלוש צורות ה-host (host ייעודי למופע, api.greenapi.com, api.green-api.com עם מקף) — כולן נותנות אותה תוצאה. המשמעות: ה-gateway של Green-API עבור המופע/tariff הזה כנראה לא חושף את קבוצת ה-endpoints של טכנולוגיית ה-HTTP API polling (receiveNotification/deleteNotification/getAvailabilityInstance), בעוד endpoints אחרים (getStateInstance/getSettings/lastIncomingMessages/שליחת הודעות) כן עובדים. בלי receiveNotification אי אפשר לממש את לולאת ה-polling שהסוכן מבוסס עליה. יש לבדוק בקונסולת Green-API של המשתמש (או מול תמיכת Green-API) האם למופע הזה מופעלת טכנולוגיית 'Notifications/HTTP API polling', או שהוא מוגבל לטכנולוגיית webhook-endpoint בלבד (למרות ש-webhookUrl ריק ו-incomingWebhook='no' כרגע)."
     }
   ]
 }
