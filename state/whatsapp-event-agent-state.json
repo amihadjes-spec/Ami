@@ -1,11 +1,5 @@
 {
   "pending_events": [],
   "notify_queued": [],
-  "issue_reported": [
-    {
-      "issue_key": "green-api-network-egress-blocked",
-      "first_reported_at": "2026-07-06T21:25:49+03:00",
-      "description": "רגרסיה: בריצה הקודמת (45b0c13) אושר שה-egress ל-Green-API עובד ושרק receiveNotification/deleteNotification/getAvailabilityInstance מחזירים 404 אפליקטיבי. בריצה הזו כל קריאה ל-Green-API — כולל endpoint פשוט כמו getStateInstance — חוזרת עם 'CONNECT tunnel failed, response 403' (חסימת מדיניות ברמת ה-proxy הארגוני), נבדק מול כל וריאציות ה-host (host ייעודי https://7107.api.greenapi.com, https://7107650762.api.green-api.com, api.green-api.com, api.greenapi.com הגנרי) — כולן נחסמות זהה. לשם השוואה, https://api.github.com עובד תקין (200) מאותה סביבה, כך שזו חסימה ספציפית לדומיינים של Green-API ולא תקלת proxy כללית. כלומר החסימה שדווחה לראשונה כ-green-api-network-egress-blocked (8ee760f) חזרה אחרי שנפתרה זמנית. לא ניתן לבצע polling כלל בריצה הזו. יש להוסיף מחדש את דומייני Green-API (כולל ה-host הייעודי של המופע) לרשימת ההיתרים (allowlist) של מדיניות ה-egress עבור ה-trigger/routine הזה; ייתכן שהתיקון הקודם לא היה קבוע (allowlist per-session/per-container ולא ברמת ה-trigger)."
-    }
-  ]
+  "issue_reported": []
 }
