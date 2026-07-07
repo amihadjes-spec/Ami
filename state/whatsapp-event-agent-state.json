@@ -1,11 +1,5 @@
 {
   "pending_events": [],
   "notify_queued": [],
-  "issue_reported": [
-    {
-      "issue_key": "green-api-quota-exceeded-correspondents",
-      "first_reported_at": "2026-07-07T09:53:00+03:00",
-      "description": "Green-API מחזירה notifications מסוג quotaExceeded (method: correspondents, used: 3, total: 3, status: CORRESPONDENTS_QUOTE_EXCEEDED) חוזרות ונשנות בריצה הזו (receiptId 8, 9, 14, 15, 19). לפי ה-description שמוחזר, רק שלוש הצ'אטים 120363418733302181@g.us, 120363135529295705@g.us, 120363422893729196@g.us מורשים לקבל/לשלוח הודעות החודש במסגרת המכסה הנוכחית; יש להעלות את התוכנית ל-business בקונסולת Green-API כדי לקבל הודעות מצ'אטים נוספים. שים לב: הרגרסיה הקודמת שדווחה (green-api-network-egress-blocked, חסימת 403 מה-proxy הארגוני) נפתרה בריצה הזו — כל קריאות ה-API (receiveNotification/deleteNotification, receiptId 1-22) הצליחו בלי חסימת egress, ולכן הוסרה מ-issue_reported."
-    }
-  ]
+  "issue_reported": []
 }
