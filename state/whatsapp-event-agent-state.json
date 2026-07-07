@@ -3,9 +3,9 @@
   "notify_queued": [],
   "issue_reported": [
     {
-      "issue_key": "green-api-network-egress-blocked",
-      "first_reported_at": "2026-07-07T08:24:53+03:00",
-      "description": "רגרסיה נוספת: הריצה הקודמת (623cfa6) אישרה ש-egress ל-Green-API עובד ומחקה את הדיווח הקודם על חסימה. בריצה הזו כל קריאה חוזרת נחסמת שוב: נבדק מול כל וריאציות ה-host (https://7107.api.greenapi.com, https://7107650762.api.green-api.com, https://api.green-api.com, https://api.greenapi.com, וגם GREEN_API_URL מה-env) — כולן מחזירות 'CONNECT tunnel failed, response 403' מה-proxy הארגוני. לשם השוואה, https://api.github.com עובד תקין (200) מאותה סביבה באותה ריצה, כך שזו חסימה ספציפית לדומייני Green-API ולא תקלת proxy כללית. לא בוצע polling כלל בריצה הזו (0 notifications נקראו/נמחקו). יש להוסיף מחדש את דומייני Green-API (כולל ה-host הייעודי 7107.api.greenapi.com) לרשימת ההיתרים (allowlist) של מדיניות ה-egress עבור ה-trigger/routine הזה — ייתכן שההיתר הוא per-session/per-container ולא קבוע ברמת ה-trigger, ולכן חוזר ונעלם בין הרצות."
+      "issue_key": "green-api-quota-exceeded-correspondents",
+      "first_reported_at": "2026-07-07T09:53:00+03:00",
+      "description": "Green-API מחזירה notifications מסוג quotaExceeded (method: correspondents, used: 3, total: 3, status: CORRESPONDENTS_QUOTE_EXCEEDED) חוזרות ונשנות בריצה הזו (receiptId 8, 9, 14, 15, 19). לפי ה-description שמוחזר, רק שלוש הצ'אטים 120363418733302181@g.us, 120363135529295705@g.us, 120363422893729196@g.us מורשים לקבל/לשלוח הודעות החודש במסגרת המכסה הנוכחית; יש להעלות את התוכנית ל-business בקונסולת Green-API כדי לקבל הודעות מצ'אטים נוספים. שים לב: הרגרסיה הקודמת שדווחה (green-api-network-egress-blocked, חסימת 403 מה-proxy הארגוני) נפתרה בריצה הזו — כל קריאות ה-API (receiveNotification/deleteNotification, receiptId 1-22) הצליחו בלי חסימת egress, ולכן הוסרה מ-issue_reported."
     }
   ]
 }
