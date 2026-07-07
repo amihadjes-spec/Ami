@@ -178,6 +178,24 @@ Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חו
 - כל notification שנשלף מ-Green-API נמחק (`deleteNotification`) לפני סיום הטיפול
   בו, גם אם דולג ולא היה רלוונטי — אחרת הוא חוזר בריצה הבאה.
 
+## אילוץ קריטי: קריאה בלבד, ללא כתיבה לוואטסאפ
+
+הסוכן **לעולם לא** שולח הודעות WhatsApp ולא קורא לשום endpoint של Green-API
+שכותב/שולח תוכן — כולל (בלי להצטמצם ל-) `sendMessage`, `sendFileByUrl`,
+`sendFileByUpload`, `sendLocation`, `sendContact`, `sendPoll`, `forwardMessages`,
+`sendLink`. אין יוצא מן הכלל: לא לצורך אישור, לא לצורך שאלה על הצעה מרובה, לא
+לצורך דיווח תקלה — כל אלה יוצאים אך ורק דרך ערוץ ההתראות של הסביבה (push
+notification), כמתואר ב"שעות שקט" למעלה.
+
+**ה-endpoints היחידים המותרים לקריאה מול Green-API**:
+
+- `receiveNotification`
+- `deleteNotification`
+- `getStateInstance`
+- `getSettings`
+
+כל endpoint אחר של Green-API אסור לשימוש בסוכן זה, ללא יוצא מן הכלל.
+
 ## הרצה מקומית (מסלול ראשי)
 
 **סטטוס נכון ל-2026-07-07:** מסלול ה-CLI המקומי הוא היחיד שהוכח כעובד מקצה לקצה
