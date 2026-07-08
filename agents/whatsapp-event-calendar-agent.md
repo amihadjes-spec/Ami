@@ -2,52 +2,77 @@
 
 ## מטרה
 
-לסרוק הודעות WhatsApp נכנסות (דרך Green-API), לזהות הודעות המתארות אירוע/פגישה
-קונקרטיים (תאריך + שעה, מיקום, "נפגשים", "אירוע", "יום הולדת" וכו'), לבדוק אם יש
-התנגשות עם היומן הקיים, ו**להציע** למשתמש להוסיף את האירוע ליומן — בלי ליצור אותו
-אוטומטית ללא אישור מפורש. זהה בעקרונותיו ל-
-[`agents/email-event-calendar-agent.md`](email-event-calendar-agent.md), כשה"תיבה
-הנכנסת" היא WhatsApp במקום Gmail, וה"תוויות" מוחלפות בקובץ state בגלל שאין מנגנון
-תיוג מקביל ב-Green-API.
+לסרוק הודעות WhatsApp נכנסות (דרך WAHA — WhatsApp HTTP API עצמאי, self-hosted,
+רץ ב-Docker מקומי), לזהות הודעות המתארות אירוע/פגישה קונקרטיים (תאריך + שעה,
+מיקום, "נפגשים", "אירוע", "יום הולדת" וכו'), לבדוק אם יש התנגשות עם היומן הקיים,
+ו**להציע** למשתמש להוסיף את האירוע ליומן — בלי ליצור אותו אוטומטית ללא אישור
+מפורש. זהה בעקרונותיו ל-[`agents/email-event-calendar-agent.md`](email-event-calendar-agent.md),
+כשה"תיבה הנכנסת" היא WhatsApp במקום Gmail, וה"תוויות" מוחלפות בקובץ state בגלל
+שאין מנגנון תיוג מקביל ב-WAHA.
 
 ## טריגר
 
-הכלים הזמינים (Green-API) לא חושפים webhook אמיתי לתוך ה-session — רק endpoint
-polling רגיל (`receiveNotification`). לכן הטריגר ממומש כ-trigger מתוזמן (cron, כל
-שעה) שמריץ session חדש ונקי (stateless) בכל הפעלה. כל המצב האמיתי נשמר בקובץ
+ל-WAHA (בניגוד ל-Green-API) יש תמיכה אמיתית ב-webhooks/websockets, אבל אלה
+דורשים תהליך מאזין קבוע (HTTP server פתוח תמיד) — מה שסותר את מודל ה-cron
+החד-פעמי הקיים (session חד-פעמי שנפתח, מבצע ריצה, ונסגר). ההחלטה המפורשת: **פולינג
+יזום (pull)**, לא webhook (push). הטריגר ממומש כ-trigger מתוזמן (cron, כל שעה)
+שמריץ session חדש ונקי (stateless) בכל הפעלה. כל המצב האמיתי נשמר בקובץ
 `state/whatsapp-event-agent-state.json` שבתוך ה-repo (ראו "State Storage" למטה),
 ולא בזיכרון השיחה.
 
 ## מקור נתונים / לולאת ה-polling
+
+WAHA, בניגוד ל-Green-API, אינו חושף תור גלובלי אחד עם מנגנון receive/delete —
+זהו REST API רגיל לאנומרציה של צ'אטים והודעות, בלי "מה חדש מאז הפעם הקודמת"
+מובנה. לכן האחריות לזיהוי "מה חדש" עוברת אלינו, דרך **watermark (חותמת זמן) לכל
+צ'אט בנפרד**, השמור ב-state (ראו `whatsapp_watermarks` ב-"State Storage" למטה).
+
+כל האורכסטרציה מול ה-REST API של WAHA (כולל pagination, חישוב watermark, וסינון
+ראשוני) מתבצעת דרך סקריפט Node קריא-בלבד ומתוחזק ב-repo:
+`scripts/waha-poll.mjs` — לא נכתב מחדש בכל ריצה (בניגוד לתבנית הישנה שנוסתה
+בעבר עם Green-API, `logs/poll-run.mjs`, שהייתה ad-hoc ולא tracked).
 
 בתחילת כל ריצה:
 
 1. `git pull` את הענף התפעולי כדי לקבל את גרסת ה-state העדכנית ביותר (הריצה
    הקודמת רצה ב-container אחר לגמרי).
 2. טען את `state/whatsapp-event-agent-state.json` (אם לא קיים — צור עם מבנה ריק,
-   ראו "State Storage").
-3. לולאה: קרא בקריאות חוזרות ל-
-   `{apiUrl}/waInstance{ID_INSTANCE}/receiveNotification/{API_TOKEN_INSTANCE}?receiveTimeout=5`
-   עד שהתשובה היא `null` (אין יותר הודעות בתור).
-4. עבור **כל** notification שמתקבל (בלי יוצא מן הכלל):
-   a. אם `typeWebhook == "incomingMessageReceived"` וגם
-      `messageData.typeMessage == "textMessage"` — חלץ את הטקסט מ-
-      `messageData.textMessageData.textMessage`, ואת ה-chat מ-`senderData.chatId`,
-      ועבד אותו לפי "זיהוי אירוע" ו-"Approval Flow" למטה.
-   b. אם `typeWebhook == "incomingMessageReceived"` וגם
-      `messageData.typeMessage` הוא `"imageMessage"` או `"videoMessage"`, וקיים
-      `messageData.fileMessageData.caption` לא ריק — חלץ את הטקסט מ-
-      `messageData.fileMessageData.caption`, ואת ה-chat מ-`senderData.chatId`,
-      ועבד אותו לפי "זיהוי אירוע" ו-"Approval Flow" למטה (בדיוק כמו הודעת טקסט
-      רגילה, רק שהמקור הוא caption של מדיה).
-   c. כל notification אחר (webhook מסוג אחר, הודעה יוצאת, סוג הודעה שאינו טקסט
-      או מדיה עם caption, וכו') — מדולג, בלי עיבוד.
-   d. **בכל המקרים**, מיד בסוף הטיפול (גם אם דולג) — קרא ל-
-      `{apiUrl}/waInstance{ID_INSTANCE}/deleteNotification/{API_TOKEN_INSTANCE}/{receiptId}`.
-      זה חובה: הודעה שלא נמחקת מהתור תחזור באותה קריאת `receiveNotification` הבאה
-      ותגרום ללולאה אינסופית / עיבוד כפול.
-5. כשהלולאה מסתיימת (תשובה `null`), עבור לשלב "שעות שקט" כדי להחליט על שליחת
-   התראות, ואז שמור ו-commit+push את ה-state (ראו למטה).
+   ראו "State Storage"). אם הקובץ קיים אך חסר בו `whatsapp_watermarks` — טען
+   אותו כ-`{}` (default-merge), לא כשגיאה.
+3. הרץ את `node scripts/waha-poll.mjs` (עם `WAHA_URL`, `WAHA_API_KEY`,
+   `WAHA_SESSION` כמשתני סביבה, ו-`whatsapp_watermarks` הנוכחי מועבר לו כקלט).
+   הסקריפט עצמו:
+   a. בודק את סטטוס ה-session (`GET /api/sessions`).
+   b. אם הוא לא נגיש בכלל (קונטיינר/רשת) — מחזיר שגיאה.
+   c. אם הוא נגיש אך `status != "WORKING"` — מחזיר `ok:false` עם ה-`sessionStatus`.
+   d. אם `status == "WORKING"` — שולף את כל הצ'אטים (`GET /api/{session}/chats`,
+      קריאה אחת), ולכל צ'אט קובע את חלון הזמן לשליפה: אם אין לו watermark —
+      מ-`now - 24h` (backfill ראשוני); אם יש — מ-`watermark + 1` (דלתא בלבד,
+      בלי לעבד מחדש הודעות שכבר טופלו). שולף הודעות עם pagination
+      (`GET /api/{session}/chats/{chatId}/messages`, `filter.timestamp.gte`),
+      מסנן `fromMe == true`, `hasMedia == true`, ו-`body` ריק (בשלב זה: **טקסט
+      בלבד**, בלי caption של מדיה — בניגוד לגרסת Green-API הקודמת). מחשב
+      watermark חדש לכל צ'אט (max timestamp מכל ההודעות שנשלפו לפני הסינון,
+      כולל אלה שסוננו; אם לא נשלפה אף הודעה — `now`, כדי שצ'אט שקט לא ייסרק
+      מחדש 24h בכל שעה).
+   e. מחזיר JSON יחיד ל-stdout:
+      `{ok, sessionStatus, chatsScanned, candidateMessages[], updatedWatermarks{}}`.
+4. פרש את הפלט:
+   a. כשל תקשורת/פלט לא תקין → דווח issue (`issue_key: waha-unreachable`) לפי
+      "מניעת דיווח כפול על תקלות" למטה, דלג על זיהוי אירועים בריצה הזו.
+   b. `ok:false` → דווח issue (`issue_key: waha-session-not-working:{sessionStatus}`)
+      באותו אופן, דלג על זיהוי אירועים בריצה הזו.
+   c. `ok:true` → נקה כל רשומת `waha-unreachable`/`waha-session-not-working:*`
+      פתוחה מ-`issue_reported` (הריצה הצליחה, לפי כלל "נפתר בפועל"), עבד כל
+      איבר ב-`candidateMessages[]` לפי "זיהוי אירוע" ו-"Approval Flow" למטה
+      (בדיוק כמו טקסט רגיל — `chat_id` הוא `from` של WAHA, `chat_name` הוא
+      `name` של הצ'אט מ-`/chats`), ומזג את `updatedWatermarks` לתוך
+      `whatsapp_watermarks` ב-state. אם `paginationCapHits[]` לא ריק — דווח
+      issue נפרד לכל צ'אט (`issue_key: waha-chat-pagination-cap-hit:{chatId}`)
+      לפי אותו מנגנון מניעת דיווח כפול (מקרה נדיר: נפח הודעות חריג בצ'אט אחד
+      שחרג ממגבלת ה-pagination בתוך `waha-poll.mjs`).
+5. עבור לשלב "שעות שקט" כדי להחליט על שליחת התראות, ואז שמור ו-commit+push את
+   ה-state (ראו למטה).
 
 ## זיהוי אירוע
 
@@ -74,8 +99,8 @@ Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חו
     {
       "id": "uuid-או-hash-יציב",
       "chat_id": "972501234567@c.us",
-      "chat_name": "שם איש קשר/קבוצה אם ידוע",
-      "source_message_id": "idMessage של ההודעה שתוארה בה האירוע",
+      "chat_name": "שם הצ'אט, נגזר ישירות משדה name של GET /api/{session}/chats",
+      "source_message_id": "id של ההודעה (שדה WAHA) שתוארה בה האירוע",
       "detected_at": "2026-07-06T10:00:00+03:00",
       "event": {
         "title": "...",
@@ -98,11 +123,14 @@ Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חו
   ],
   "issue_reported": [
     {
-      "issue_key": "מזהה יציב לסוג התקלה, למשל green-api-auth-error",
+      "issue_key": "מזהה יציב לסוג התקלה, למשל waha-session-not-working:FAILED",
       "first_reported_at": "2026-07-06T09:00:00+03:00",
       "description": "..."
     }
-  ]
+  ],
+  "whatsapp_watermarks": {
+    "972501234567@c.us": 1751980800
+  }
 }
 ```
 
@@ -115,6 +143,11 @@ Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חו
   בגלל שעות שקט (הצעה חדשה, אבל גם תוצאה של אישור/דחייה שטופלו בזמן שעות שקט —
   ראו "שעות שקט" למטה).
 - `issue_reported` — ראו "מניעת דיווח כפול על תקלות".
+- `whatsapp_watermarks` — מפה מ-`chat_id` לחותמת זמן (unix seconds) של ההודעה
+  האחרונה שנבדקה באותו צ'אט. זהו מנגנון האנטי-כפילות של WAHA (מחליף את
+  `deleteNotification` של Green-API) — ראו "מקור נתונים / לולאת ה-polling"
+  למעלה. חסר מפתח לצ'אט מסוים = מעולם לא נבדק = backfill של 24 שעות אחורה
+  בריצה הבאה.
 
 בסוף כל ריצה: שמור את הקובץ, `git add`, `git commit` עם הודעה תמציתית, ו-`git push`
 לענף התפעולי. בלי push, הריצה הבאה (container חדש לגמרי, clone מחדש) לא תראה את
@@ -137,7 +170,8 @@ Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חו
   שוב לאישור (חוזר לתחילת הזרימה, לא יוצר עדיין).
 - מילים כמו "לא" / "reject" → **דחייה**: הסר את ההצעה מ-`pending_events` בלי ליצור
   אירוע. אל תציע שוב את אותה הצעה (אין "checked"-flag נפרד כמו במייל — פשוט אין יותר
-  רשומה פעילה עבורה, וההודעה המקורית כבר לא תיסרק שוב כי אינה חדשה ב-`receiveNotification`).
+  רשומה פעילה עבורה, וההודעה המקורית כבר לא תיסרק שוב כי היא ישנה יותר מה-watermark
+  של הצ'אט).
 - אם יש כמה הצעות פתוחות בו-זמנית מאותו `chat_id` ולא ברור לאיזו מתייחסת התשובה —
   יש לשאול את המשתמש לבחור (בהודעת `notify_queued` הבאה) במקום לנחש.
 
@@ -182,88 +216,79 @@ Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חו
 
 ## מניעת דיווח כפול על תקלות
 
-זהה לחלוטין ל-Email Agent: תקלה (למשל כשל אימות מול Green-API, timeout חוזר,
-תשובה לא צפויה מה-endpoint) מדווחת פעם אחת בלבד למשתמש, מסומנת ב-`issue_reported`
-ב-state file לפי `issue_key` יציב, ולא מדווחת שוב עד שהיא נפתרת בפועל (כלומר עד
-שריצה עוקבת מצליחה לבצע את אותה פעולה בלי שגיאה — ואז מוסרת הרשומה מ-`issue_reported`).
+זהה לחלוטין ל-Email Agent: תקלה (למשל `waha-unreachable` — הקונטיינר/הרשת לא
+נגישים, או `waha-session-not-working:{status}` — ה-session לא במצב `WORKING`)
+מדווחת פעם אחת בלבד למשתמש, מסומנת ב-`issue_reported` ב-state file לפי
+`issue_key` יציב, ולא מדווחת שוב עד שהיא נפתרת בפועל (כלומר עד שריצה עוקבת
+מצליחה לבצע את אותה פעולה בלי שגיאה — ואז מוסרת הרשומה מ-`issue_reported`).
 
 ## עקרונות
 
 - הסוכן אף פעם לא יוצר אירוע ביומן בלי אישור מפורש מהמשתמש.
 - בסוף כל ריצה נשלחת שורת סיכום קצרה אחת לפיד ההתראות (ראו "סיכום ריצה" למעלה)
   — אבל אין הודעות נוספות/חוזרות מעבר לזו כשאין בפועל אירוע/תקלה לדווח עליהם.
-- אין הודעות יזומות בשעות שקט (22:00–07:00, Asia/Jerusalem) — הקריאה מ-Green-API,
-  מחיקת ה-notifications, זיהוי האירועים ובדיקת ההתנגשויות ממשיכים כרגיל, רק השליחה
-  נדחית ומרוכזת.
+- אין הודעות יזומות בשעות שקט (22:00–07:00, Asia/Jerusalem) — הקריאה ל-WAHA,
+  זיהוי האירועים ובדיקת ההתנגשויות ממשיכים כרגיל, רק השליחה נדחית ומרוכזת.
 - לא לצטט הודעת WhatsApp במלואה — רק את הפרטים הרלוונטיים לאירוע.
-- כל notification שנשלף מ-Green-API נמחק (`deleteNotification`) לפני סיום הטיפול
-  בו, גם אם דולג ולא היה רלוונטי — אחרת הוא חוזר בריצה הבאה.
+- כל הודעה שנבדקה מתועדת ב-watermark של הצ'אט שלה (עדכון `whatsapp_watermarks`)
+  לפני סיום הריצה, גם אם דולגה ולא הייתה רלוונטית — אחרת אותו צ'אט ייסרק מחדש
+  (backfill מיותר) בריצה הבאה.
 
 ## אילוץ קריטי: קריאה בלבד, ללא כתיבה לוואטסאפ
 
-הסוכן **לעולם לא** שולח הודעות WhatsApp ולא קורא לשום endpoint של Green-API
-שכותב/שולח תוכן — כולל (בלי להצטמצם ל-) `sendMessage`, `sendFileByUrl`,
-`sendFileByUpload`, `sendLocation`, `sendContact`, `sendPoll`, `forwardMessages`,
-`sendLink`. אין יוצא מן הכלל: לא לצורך אישור, לא לצורך שאלה על הצעה מרובה, לא
-לצורך דיווח תקלה — כל אלה יוצאים אך ורק דרך ערוץ ההתראות של הסביבה (push
-notification), כמתואר ב"שעות שקט" למעלה.
+הסוכן **לעולם לא** שולח הודעות WhatsApp ולא קורא לשום endpoint של WAHA
+שכותב/שולח/משנה מצב — כולל (בלי להצטמצם ל-) שליחת הודעות (`POST
+/api/sendText`/`sendImage`/`sendFile`/`sendLocation`/`sendContactVcard`/`sendPoll`
+וכו'), וכן **`POST /api/{session}/chats/{chatId}/messages/read`** — למרות
+שהשם נשמע read-only, לקריאה הזו יש תופעת לוואי אמיתית: היא מסמנת הודעות
+כ"נקראו" בפועל בחשבון הוואטסאפ האמיתי (ווי כחול, איפוס תג "לא נקרא") — **אסורה
+לשימוש בסוכן זה**, בדיוק כמו endpoint שליחה. אין יוצא מן הכלל: לא לצורך אישור,
+לא לצורך שאלה על הצעה מרובה, לא לצורך דיווח תקלה — כל אלה יוצאים אך ורק דרך
+ערוץ ההתראות של הסביבה (push notification), כמתואר ב"שעות שקט" למעלה.
 
-**ה-endpoints היחידים המותרים לקריאה מול Green-API**:
+**ה-endpoints היחידים המותרים לקריאה מול WAHA** (כולם דרך `scripts/waha-poll.mjs`,
+ראו "מקור נתונים / לולאת ה-polling"):
 
-- `receiveNotification`
-- `deleteNotification`
-- `getStateInstance`
-- `getSettings`
+- `GET /api/sessions`
+- `GET /api/{session}/chats`
+- `GET /api/{session}/chats/{chatId}/messages`
 
-כל endpoint אחר של Green-API אסור לשימוש בסוכן זה, ללא יוצא מן הכלל.
+כל endpoint אחר של WAHA אסור לשימוש בסוכן זה, ללא יוצא מן הכלל.
 
-## הרצה מקומית (מסלול ראשי)
+## הרצה מקומית (מסלול ראשי — היחיד האפשרי)
 
-**סטטוס נכון ל-2026-07-07:** מסלול ה-CLI המקומי הוא היחיד שהוכח כעובד מקצה לקצה
-(receive → delete → state → push). ה-cloud trigger (routine בקלוד קוד) עדיין חסום
-באופן קבוע ב-egress policy ארגוני מול דומייני Green-API (`*.greenapi.com`,
-`*.green-api.com`) — זו לא תקלה זמנית/רגרסיה, אלא מגבלה מבנית שלא נפתרה. אין
-להסתמך על ה-cloud trigger עד שחסימת ה-egress תיפתר בפועל ברמת הארגון/
-support.claude.com.
+**סטטוס נכון ל-2026-07-08:** מסלול ה-CLI המקומי הוא **לא רק** המסלול היחיד
+שהוכח כעובד מקצה לקצה — הוא כעת גם המסלול היחיד **האפשרי מבנית**. WAHA רץ
+כקונטיינר Docker מקומי על `localhost:3000` בלבד, ואינו נגיש משום סביבת ענן
+חיצונית (בניגוד ל-Green-API, ששירות ענן שהיה נגיש מכל מקום, אך חסום ספציפית
+ב-egress policy ארגוני). כלומר גם אם חסימת ה-egress שהייתה מול דומייני
+Green-API תיפתר אי-פעם, זה לא ישנה דבר: `cloud trigger` לעולם לא יוכל להגיע
+ל-WAHA שרץ במחשב הזה. **אין להשקיע יותר בנתיב ה-cloud trigger עבור הסוכן הזה.**
 
-| | הרצה מקומית (CLI) | Cloud trigger |
-|---|---|---|
-| **זמינות** | עובד, תלוי שהמחשב דלוק בשעה העגולה | לא זמין כרגע (חסום) |
-| מנגנון הפעלה | הרצה מתוזמנת (cron מקומי) של Claude Code CLI על מחשב המשתמש, מול אותו `state/whatsapp-event-agent-state.json` ב-repo | trigger מתוזמן (cron) דרך claude-code-remote, שיוצר session חדש בענן בכל הפעלה |
-| תלות ברשת | תלוי ב-egress הרגיל של מחשב המשתמש — לא כפוף למדיניות ה-egress הארגונית של סביבת ה-trigger | תלוי ב-egress policy של סביבת ה-trigger בענן — חסום כרגע מול כל דומייני Green-API |
-| Secrets | נטענים מסביבת המשתמש המקומית (`.env`/משתני סביבה) | נדרשים כ-secrets ברמת ה-trigger/routine (`ID_INSTANCE`, `API_TOKEN_INSTANCE`) — וצריך להגדיר אותם מחדש בכל יצירת trigger |
-| Connector (Google Calendar) | מחובר דרך ה-session המקומי של המשתמש | נדרש להפעיל ידנית בכל יצירת trigger מחדש (ראו "חשוב" למטה) |
-| State (git) | זהה — `git pull`/`commit`/`push` לענף התפעולי בסוף כל ריצה | זהה |
+| | הרצה מקומית (CLI) |
+|---|---|
+| **זמינות** | עובד, תלוי שהמחשב דלוק בשעה העגולה **וגם** ש-Docker Desktop + קונטיינר `waha` רצים ו-session במצב `WORKING` |
+| מנגנון הפעלה | הרצה מתוזמנת (cron מקומי, Task Scheduler) של Claude Code CLI על מחשב המשתמש, מול אותו `state/whatsapp-event-agent-state.json` ב-repo |
+| תלות ברשת | תלוי רק ב-`localhost:3000` (WAHA) — אין תלות ב-egress חיצוני כלשהו לצורך ה-polling עצמו |
+| Secrets | `WAHA_URL`/`WAHA_API_KEY` נטענים מסביבת המשתמש המקומית (ב-`run-whatsapp-agent.ps1`) |
+| Connector (Google Calendar) | מחובר דרך ה-session המקומי של המשתמש |
+| State (git) | `git pull`/`commit`/`push` לענף התפעולי בסוף כל ריצה |
 
-## הפעלה בפועל / הערות תשתית (ברירת מחדל עתידית — לא נוכחית)
+## הערות תשתית נוספות
 
-**הערה:** זהו מסלול ברירת המחדל המיועד לטווח הארוך, אבל **אינו זמין בפועל כרגע**
-בגלל חסימת ה-egress המתוארת למעלה. עד לפתרון החסימה, יש להשתמש במסלול "הרצה
-מקומית (מסלול ראשי)" בלבד.
-
-מומש כ-trigger מתוזמן (cron, שעתי) דרך claude-code-remote, שיוצר session חדש בכל
-הפעלה ומריץ את התהליך שמתואר למעלה מול ה-REST API של Green-API ומול ה-MCP של
-Google Calendar.
-
-- **Secrets** נדרשים בסביבת ה-trigger: `ID_INSTANCE`, `API_TOKEN_INSTANCE`
-  (Green-API). ודא גם מהו ה-`apiUrl` הנכון עבור המכשיר (עבור המופע הנוכחי:
-  `https://7107.api.greenapi.com`, אך Green-API עשויה להקצות host ייעודי אחר
-  למופעים אחרים — יש לבדוק בקונסולת Green-API של המשתמש).
-- **Connector** נדרש: **Google Calendar בלבד**. Green-API היא קריאת REST רגילה
-  (`Bash`/HTTP) ולא MCP connector, ולכן אינה מופיעה ברשימת ה-connectors שיש להפעיל.
-- **אין סיכון של polling חסר** — Green-API שומרת הודעות בתור עד 24 שעות, כך שגם אם
-  ריצה אחת נכשלת, ההודעות ייקלטו בריצה הבאה.
-- **State ב-git**: בניגוד לתוויות Gmail (שמתקיימות בשרת חיצוני), ה-state כאן חי
-  בתוך ה-repo עצמו. יש לוודא ש-`git push` בסוף כל ריצה מצליח בפועל (לענף התפעולי
-  הקבוע של הסוכן, לא לענף הפיתוח של המשימה הנוכחית) — אחרת הריצות הבאות יתחילו
+- **תלות חדשה ב-Docker**: בניגוד ל-Green-API (שירות ענן מנוהל, תמיד זמין), WAHA
+  דורש שה-Docker Desktop וקונטיינר `waha` ירוצו בפועל על המחשב בזמן הריצה
+  המתוזמנת. `run-whatsapp-agent.ps1` מנסה להפעיל את Docker Desktop אם הוא כבוי
+  (best-effort, לא חוסם) — אבל אם הקונטיינר/ה-session עדיין לא זמינים בפועל,
+  הריצה מדווחת על כך דרך `issue_reported` (ראו "מקור נתונים / לולאת ה-polling")
+  ולא נכשלת בצורה לא מבוקרת.
+- **מפתח ה-API של WAHA מתחדש בכל restart של הקונטיינר** אלא אם הוגדר כ-env var
+  קבוע (`WAHA_API_KEY`) בהרצת הקונטיינר עצמו (`docker run -e WAHA_API_KEY=...`
+  או קובץ compose) — יש לוודא שזה מוגדר כך, אחרת הריצה המתוזמנת תיכשל עם מפתח
+  ישן בכל פעם ש-Docker/הקונטיינר מופעלים מחדש.
+- **אין סיכון של polling חסר בטווח קצר** — מנגנון ה-watermark (ראו "State
+  Storage") שומר per-chat checkpoint, כך שגם אם ריצה אחת נכשלת, הריצה הבאה
+  תשלים את הפער (עד למגבלת ה-pagination cap בתוך `waha-poll.mjs`).
+- **State ב-git**: ה-state חי בתוך ה-repo עצמו. יש לוודא ש-`git push` בסוף כל
+  ריצה מצליח בפועל (לענף התפעולי הקבוע של הסוכן) — אחרת הריצות הבאות יתחילו
   מ-state מיושן ועלולות לשלוח הצעות/התראות כפולות.
-
-### חשוב — הפעלת ה-connector מחדש בכל יצירת trigger חדש
-
-`create_trigger`/`update_trigger` לא חושפים פרמטר לקביעת אילו MCP connectors
-(Google Calendar) מחוברים ל-trigger — זו הגדרה ברמת ה-routine/session שמנוהלת רק
-דרך ה-UI של claude-code-remote, ולא עוברת אוטומטית מ-trigger ישן ל-trigger חדש
-שמחליף אותו. **בכל פעם שנוצר מחדש trigger** (למשל כי צריך לשנות את ה-prompt, וה-API
-לא תומך בעריכת prompt קיים) — יש לוודא ידנית בממשק שה-connector Google Calendar
-מופעל (enabled), וש-`ID_INSTANCE`/`API_TOKEN_INSTANCE` מוגדרים כ-secrets עבור
-ה-trigger/routine החדש, אחרת ההרצה נכשלת גם אם ה-connector מחובר ברמת הארגון.

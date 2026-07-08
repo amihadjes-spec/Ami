@@ -6,6 +6,12 @@
       "issue_key": "green-api-quota-exceeded-correspondents",
       "first_reported_at": "2026-07-08T07:23:00+03:00",
       "description": "Monthly correspondents quota exceeded (used 3/3) - CORRESPONDENTS_QUOTE_EXCEEDED. Allowed chats: 120363135529295705@g.us, 120363418733302181@g.us, 120363422893729196@g.us. Requires tariff upgrade at console.green-api.com."
+    },
+    {
+      "issue_key": "waha-session-not-working:FAILED",
+      "first_reported_at": "2026-07-08T16:27:16+03:00",
+      "description": "WAHA session 'default' status is FAILED (not WORKING). GET /api/sessions returned status=FAILED. Polling skipped this run - no chats scanned. Likely needs session restart / QR re-scan via WAHA dashboard at http://localhost:3000."
     }
-  ]
+  ],
+  "whatsapp_watermarks": {}
 }
