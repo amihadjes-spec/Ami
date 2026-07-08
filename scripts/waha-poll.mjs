@@ -88,7 +88,6 @@ async function main() {
     for (const m of messages) {
       if (m.timestamp > maxTs) maxTs = m.timestamp;
       if (m.fromMe) continue;
-      if (m.hasMedia) continue;
       if (!m.body || !m.body.trim()) continue;
       candidateMessages.push({
         chatId,
@@ -98,6 +97,7 @@ async function main() {
         author: m.author || m.participant || null,
         timestamp: m.timestamp,
         body: m.body,
+        hasMedia: !!m.hasMedia,
       });
     }
     updatedWatermarks[chatId] = messages.length ? maxTs : now;

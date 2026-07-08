@@ -50,11 +50,14 @@ WAHA, בניגוד ל-Green-API, אינו חושף תור גלובלי אחד ע
       מ-`now - 24h` (backfill ראשוני); אם יש — מ-`watermark + 1` (דלתא בלבד,
       בלי לעבד מחדש הודעות שכבר טופלו). שולף הודעות עם pagination
       (`GET /api/{session}/chats/{chatId}/messages`, `filter.timestamp.gte`),
-      מסנן `fromMe == true`, `hasMedia == true`, ו-`body` ריק (בשלב זה: **טקסט
-      בלבד**, בלי caption של מדיה — בניגוד לגרסת Green-API הקודמת). מחשב
-      watermark חדש לכל צ'אט (max timestamp מכל ההודעות שנשלפו לפני הסינון,
-      כולל אלה שסוננו; אם לא נשלפה אף הודעה — `now`, כדי שצ'אט שקט לא ייסרק
-      מחדש 24h בכל שעה).
+      מסנן `fromMe == true` ו-`body` ריק. **כולל הודעות מדיה עם caption**: שדה
+      ה-`body` שמוחזר מ-WAHA לכל הודעת `imageMessage`/`videoMessage` הוא כבר
+      טקסט ה-caption הקריא (לא בייטים גולמיים של התמונה) — לכן מספיק להסתמך
+      על `body`/בדיקת ריקנות בלבד, בלי לסנן לפי `hasMedia`. **לעולם לא מורידים
+      או שומרים את קובץ המדיה עצמו** (`media.url`) — רק את טקסט ה-caption.
+      מחשב watermark חדש לכל צ'אט (max timestamp מכל ההודעות שנשלפו לפני
+      הסינון, כולל אלה שסוננו; אם לא נשלפה אף הודעה — `now`, כדי שצ'אט שקט
+      לא ייסרק מחדש 24h בכל שעה).
    e. מחזיר JSON יחיד ל-stdout:
       `{ok, sessionStatus, chatsScanned, candidateMessages[], updatedWatermarks{}}`.
 4. פרש את הפלט:
