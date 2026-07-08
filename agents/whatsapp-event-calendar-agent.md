@@ -34,9 +34,15 @@ polling רגיל (`receiveNotification`). לכן הטריגר ממומש כ-trig
       `messageData.typeMessage == "textMessage"` — חלץ את הטקסט מ-
       `messageData.textMessageData.textMessage`, ואת ה-chat מ-`senderData.chatId`,
       ועבד אותו לפי "זיהוי אירוע" ו-"Approval Flow" למטה.
-   b. כל notification אחר (webhook מסוג אחר, הודעה יוצאת, סוג הודעה שאינו טקסט
-      וכו') — מדולג, בלי עיבוד.
-   c. **בשני המקרים**, מיד בסוף הטיפול (גם אם דולג) — קרא ל-
+   b. אם `typeWebhook == "incomingMessageReceived"` וגם
+      `messageData.typeMessage` הוא `"imageMessage"` או `"videoMessage"`, וקיים
+      `messageData.fileMessageData.caption` לא ריק — חלץ את הטקסט מ-
+      `messageData.fileMessageData.caption`, ואת ה-chat מ-`senderData.chatId`,
+      ועבד אותו לפי "זיהוי אירוע" ו-"Approval Flow" למטה (בדיוק כמו הודעת טקסט
+      רגילה, רק שהמקור הוא caption של מדיה).
+   c. כל notification אחר (webhook מסוג אחר, הודעה יוצאת, סוג הודעה שאינו טקסט
+      או מדיה עם caption, וכו') — מדולג, בלי עיבוד.
+   d. **בכל המקרים**, מיד בסוף הטיפול (גם אם דולג) — קרא ל-
       `{apiUrl}/waInstance{ID_INSTANCE}/deleteNotification/{API_TOKEN_INSTANCE}/{receiptId}`.
       זה חובה: הודעה שלא נמחקת מהתור תחזור באותה קריאת `receiveNotification` הבאה
       ותגרום ללולאה אינסופית / עיבוד כפול.
