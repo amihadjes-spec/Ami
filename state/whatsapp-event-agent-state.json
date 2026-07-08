@@ -8,11 +8,5 @@
       "queued_at": "2026-07-08T05:24:00+03:00"
     }
   ],
-  "issue_reported": [
-    {
-      "issue_key": "green-api-quota-exceeded-correspondents",
-      "first_reported_at": "2026-07-08T05:24:00+03:00",
-      "description": "Monthly correspondents quota exceeded (used 3/3) - CORRESPONDENTS_QUOTE_EXCEEDED. Allowed chats: 120363135529295705@g.us, 120363418733302181@g.us, 120363422893729196@g.us. Requires tariff upgrade at console.green-api.com."
-    }
-  ]
+  "issue_reported": []
 }
