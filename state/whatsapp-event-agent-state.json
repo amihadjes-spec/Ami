@@ -54,7 +54,7 @@
     {
       "issue_key": "waha-session-not-working:FAILED",
       "first_reported_at": "2026-07-09T11:24:53+03:00",
-      "description": "WAHA session 'default' status is FAILED (not WORKING). GET /api/sessions החזיר status=FAILED. הריצה דולגה על סריקת הודעות. כנראה דורש הפעלה מחדש/QR מחדש דרך dashboard של WAHA ב-http://localhost:3000."
+      "description": "WAHA session 'default' status is FAILED (not WORKING). GET /api/sessions מחזיר status=FAILED (נבדק שוב ב-2026-07-09T21:24). הריצה דולגה על סריקת הודעות. כנראה דורש הפעלה מחדש/QR מחדש דרך dashboard של WAHA ב-http://localhost:3000."
     }
   ],
   "whatsapp_watermarks": {
