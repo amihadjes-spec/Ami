@@ -84,9 +84,7 @@ async function main() {
     }
     if (cappedOut) paginationCapHits.push(chatId);
 
-    let maxTs = watermark || 0;
     for (const m of messages) {
-      if (m.timestamp > maxTs) maxTs = m.timestamp;
       if (m.fromMe) continue;
       if (!m.body || !m.body.trim()) continue;
       candidateMessages.push({
@@ -100,7 +98,13 @@ async function main() {
         hasMedia: !!m.hasMedia,
       });
     }
-    updatedWatermarks[chatId] = messages.length ? maxTs : now;
+
+    // WAHA omits the top-level `timestamp` field on messages when `filter.timestamp.gte`
+    // is used (confirmed against a live WAHA instance), so per-message timestamps from
+    // `fetchChatMessagesSince` can't be used to compute the new watermark. Since we've
+    // now checked this chat's messages up through `now`, use that directly as the
+    // checkpoint instead (never decreases, since it's compared against `watermark` above).
+    updatedWatermarks[chatId] = now;
   }
 
   console.log(JSON.stringify({
