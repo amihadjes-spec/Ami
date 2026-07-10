@@ -96,6 +96,7 @@ async function main() {
         timestamp: m.timestamp,
         body: m.body,
         hasMedia: !!m.hasMedia,
+        replyToMessageId: m.replyTo && m.replyTo.id ? m.replyTo.id : null,
       });
     }
 
