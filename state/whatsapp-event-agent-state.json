@@ -59,7 +59,7 @@
     {
       "issue_key": "waha-session-not-working:SCAN_QR_CODE",
       "first_reported_at": "2026-07-10T08:24:39+03:00",
-      "description": "WAHA session 'default' status is SCAN_QR_CODE (not WORKING). GET /api/sessions מחזיר status=SCAN_QR_CODE - הסטטוס השתנה מ-FAILED הקודם. הריצה דולגה על סריקת הודעות. נדרש סריקת QR מחדש דרך WAHA dashboard ב-http://localhost:3000."
+      "description": "WAHA session 'default' status is SCAN_QR_CODE (not WORKING). GET /api/sessions מחזיר status=SCAN_QR_CODE (נבדק שוב ב-2026-07-10T11:25). הריצה דולגה על סריקת הודעות. נדרש סריקת QR מחדש דרך WAHA dashboard. הערה תפעולית: הקונטיינר waha עצמו רץ, אך כרגע חשוף על פורט הוסט 8080 ולא 3000 (docker port waha -> 0.0.0.0:8080); WAHA_URL המוגדר בסביבה (http://localhost:3000) לא הגיע לקונטיינר, נעשה שימוש חד-פעמי ב-http://localhost:8080 לצורך הבדיקה הזו בלבד - כדאי לתקן את מיפוי הפורט או את משתנה הסביבה."
     }
   ],
   "whatsapp_watermarks": {
