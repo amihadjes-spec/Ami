@@ -49,19 +49,17 @@
       "status": "awaiting_response"
     }
   ],
-  "notify_queued": [
-    {
-      "kind": "run_summary",
-      "pending_event_id": null,
-      "text": "פולינג WAHA נכשל - session במצב FAILED, לא נסרקו הודעות. 3 הצעות פתוחות ללא שינוי. (תקלה כבר דווחה קודם, אין דיווח כפול)",
-      "queued_at": "2026-07-09T22:24:39+03:00"
-    }
-  ],
+  "notify_queued": [],
   "issue_reported": [
     {
       "issue_key": "waha-session-not-working:FAILED",
       "first_reported_at": "2026-07-09T11:24:53+03:00",
       "description": "WAHA session 'default' status is FAILED (not WORKING). GET /api/sessions מחזיר status=FAILED (נבדק שוב ב-2026-07-09T22:24). הריצה דולגה על סריקת הודעות. כנראה דורש הפעלה מחדש/QR מחדש דרך dashboard של WAHA ב-http://localhost:3000."
+    },
+    {
+      "issue_key": "waha-session-not-working:SCAN_QR_CODE",
+      "first_reported_at": "2026-07-10T08:24:39+03:00",
+      "description": "WAHA session 'default' status is SCAN_QR_CODE (not WORKING). GET /api/sessions מחזיר status=SCAN_QR_CODE - הסטטוס השתנה מ-FAILED הקודם. הריצה דולגה על סריקת הודעות. נדרש סריקת QR מחדש דרך WAHA dashboard ב-http://localhost:3000."
     }
   ],
   "whatsapp_watermarks": {
