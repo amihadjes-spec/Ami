@@ -308,3 +308,14 @@ Green-API תיפתר אי-פעם, זה לא ישנה דבר: `cloud trigger` ל�
 
 תיקון תשתית שבוצע: הקונטיינר waha היה חסר לגמרי, לא רץ ולא קיים אפילו כעצור. נוצר מחדש עם docker run, מיפוי פורט 3000:3000 במקום 8080 הישן שגרם לאי התאמה מול WAHA_URL, מיפוי volume קיים מ .waha-sessions אל /app/.sessions בקונטיינר, ומשתני דשבורד מפורשים WAHA_DASHBOARD_USERNAME ו WAHA_DASHBOARD_PASSWORD לצורך גישה. נוסף גם --restart unless-stopped כדי שהפקודה docker start waha בסקריפט run-whatsapp-agent.ps1 תמיד תמצא קונטיינר קיים אחרי ריבוט של המחשב.
 
+
+## עדכון לוגיקת אישור - notification_message_id (10/07/2026)
+
+בעיה שזוהתה: לכל pending_event יש כיום רק source_message_id, שהוא הID של הודעת המקור שממנה זוהה האירוע (למשל הזמנה לקונצרט). אין שדה שמצביע על הודעת ההצעה/ההתראה שהסוכן עצמו שולח לצ'אט העצמי כדי לבקש אישור. כתוצאה מכך, גם כשreplyTo.id נתמך ועובד, אין מול מה להשוות אותו.
+
+תיקון נדרש בלוגיקת הסוכן: כאשר נשלחת הודעת הצעה/התראה חדשה לצ'אט העצמי דרך POST /api/sendText עבור pending_event חדש, יש לשמור את הid שחוזר מהקריאה הזו (השדה id.id בתשובת WAHA) בשדה חדש בpending_event בשם notification_message_id.
+
+התאמת אישור: כאשר waha-poll.mjs מזהה הודעה נכנסת עם replyToMessageId שאינו null, יש להשוות אותו מול notification_message_id של כל pending_event במצב awaiting_response (לא מול source_message_id). התאמה מדויקת - סימן לאישור. הbody של הודעת התגובה (למשל אישור, לא, שנה) קובע את סוג הפעולה כמו קודם.
+
+fallback: אם pending_event ישן לא כולל notification_message_id (למשל שלושת האירועים שנוצרו לפני התיקון), fallback לחלון זמן נשאר כרשת ביטחון בלבד למקרה הזה בדיוק, ולא כדרך עבודה רגילה.
+
