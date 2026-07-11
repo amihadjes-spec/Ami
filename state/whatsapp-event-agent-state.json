@@ -1,23 +1,6 @@
 {
   "pending_events": [
     {
-      "id": "wa-labim-parents-summer-talk-20260712",
-      "chat_id": "120363422893729196@g.us",
-      "chat_name": "׳×׳•׳©׳‘׳™ ׳׳”׳‘׳™׳ - ׳”׳‘׳™׳× ׳©׳ ׳›׳•׳׳ ׳•",
-      "source_message_id": "false_120363422893729196@g.us_AC0A73BC299DA0B9F9DA763A3219BA60_66597830025273@lid",
-      "detected_at": "2026-07-11T09:27:17+03:00",
-      "event": {
-        "title": "׳©׳™׳—׳” ׳¢׳ ׳”׳•׳¨׳™׳ ׳׳ ׳•׳¢׳¨ - ׳׳™ ׳׳₪׳—׳“ ׳׳”׳§׳™׳¥?",
-        "start": "2026-07-12T20:00:00+03:00",
-        "end": "2026-07-12T21:00:00+03:00",
-        "location": "׳׳•׳¢׳“׳•׳ ׳ ׳•׳¢׳¨ (׳׳”׳‘׳™׳)",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": false,
-      "status": "awaiting_response",
-      "notification_message_id": "3EB0F01E50E5D02EFE297E"
-    },
-    {
       "id": "wa-mishpaha-shevet-gathering-20260718",
       "chat_id": "972522248415-1336677083@g.us",
       "chat_name": "המשפחה;)",
