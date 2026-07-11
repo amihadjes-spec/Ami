@@ -69,6 +69,23 @@ async function main() {
   const updatedWatermarks = {};
   const paginationCapHits = [];
 
+  // The self-chat (where the agent posts event proposals and the user
+  // replies to approve/reject them) can't be recognized from a single
+  // message's `from`/`to` fields: WAHA reports the agent's own API-sent
+  // notifications under the account's `@lid` identity, but the user's
+  // replies typed on their phone come back under the `@c.us` (phone number)
+  // identity instead - both forms mean "this account", but they don't match
+  // each other or `chatId` consistently (confirmed against a live WAHA
+  // instance). What *is* stable: WhatsApp shows the self-chat's name as your
+  // own account pushName (there's no contact on the other end to name it
+  // after), so match the chat once, up front.
+  const selfChatId = (() => {
+    const pushName = session.me && session.me.pushName;
+    if (!pushName) return null;
+    const self = chats.find((c) => !c.isGroup && c.name === pushName);
+    return self ? chatIdOf(self) : null;
+  })();
+
   for (const chat of chats) {
     const chatId = chatIdOf(chat);
     if (!chatId) continue;
@@ -85,7 +102,15 @@ async function main() {
     if (cappedOut) paginationCapHits.push(chatId);
 
     for (const m of messages) {
-      if (m.fromMe) continue;
+      // fromMe is true for every message in the self-chat, including the
+      // user's own quoted approve/reject replies - only exempt those from
+      // the usual fromMe skip (a present replyTo.id distinguishes a real
+      // reply from the agent's own notification message, which has none),
+      // so the Approval Flow gets a chance to match it against
+      // `notification_message_id`. Every other chat (groups, real contacts)
+      // keeps the original fromMe skip unchanged.
+      const isSelfChatReply = chatId === selfChatId && m.fromMe && m.replyTo && m.replyTo.id;
+      if (m.fromMe && !isSelfChatReply) continue;
       if (!m.body || !m.body.trim()) continue;
       candidateMessages.push({
         chatId,
