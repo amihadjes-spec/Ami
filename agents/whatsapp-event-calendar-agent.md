@@ -1,112 +1,56 @@
-# סוכן: זיהוי אירועים בהודעות WhatsApp + הצעה להוספה ליומן
+# Agent: WhatsApp Event Detection + Calendar-Add Suggestion
 
-## מטרה
+## Purpose
 
-לסרוק הודעות WhatsApp נכנסות (דרך WAHA — WhatsApp HTTP API עצמאי, self-hosted,
-רץ ב-Docker מקומי), לזהות הודעות המתארות אירוע/פגישה קונקרטיים (תאריך + שעה,
-מיקום, "נפגשים", "אירוע", "יום הולדת" וכו'), לבדוק אם יש התנגשות עם היומן הקיים,
-ו**להציע** למשתמש להוסיף את האירוע ליומן — בלי ליצור אותו אוטומטית ללא אישור
-מפורש. זהה בעקרונותיו ל-[`agents/email-event-calendar-agent.md`](email-event-calendar-agent.md),
-כשה"תיבה הנכנסת" היא WhatsApp במקום Gmail, וה"תוויות" מוחלפות בקובץ state בגלל
-שאין מנגנון תיוג מקביל ב-WAHA.
+Scan incoming WhatsApp messages (via WAHA — a self-hosted WhatsApp HTTP API running in a local Docker container) to detect messages describing a concrete event/meeting (date + time, location, phrases like "let's meet," "event," "birthday," etc.), check for conflicts with the existing calendar, and **suggest** adding the event to the calendar — never creating it automatically without explicit user approval. Architecturally mirrors [`agents/email-event-calendar-agent.md`](email-event-calendar-agent.md), with WhatsApp replacing Gmail as the "inbox" and a state file replacing Gmail labels (WAHA has no equivalent tagging mechanism).
 
-## טריגר
+## Trigger
 
-ל-WAHA (בניגוד ל-Green-API) יש תמיכה אמיתית ב-webhooks/websockets, אבל אלה
-דורשים תהליך מאזין קבוע (HTTP server פתוח תמיד) — מה שסותר את מודל ה-cron
-החד-פעמי הקיים (session חד-פעמי שנפתח, מבצע ריצה, ונסגר). ההחלטה המפורשת: **פולינג
-יזום (pull)**, לא webhook (push). הטריגר ממומש כ-trigger מתוזמן (cron, כל שעה)
-שמריץ session חדש ונקי (stateless) בכל הפעלה. כל המצב האמיתי נשמר בקובץ
-`state/whatsapp-event-agent-state.json` שבתוך ה-repo (ראו "State Storage" למטה),
-ולא בזיכרון השיחה.
+WAHA supports webhooks/websockets, but these require a persistently listening process, which conflicts with the current one-shot cron model (a session opens, runs once, and closes). Decision: **pull-based polling**, not push/webhooks. The agent runs on a scheduled trigger (cron, hourly), each run being a fresh, stateless session. All real state lives in `state/whatsapp-event-agent-state.json` in the repo (see "State Storage"), not in conversation memory.
 
-## מקור נתונים / לולאת ה-polling
+## Data Source / Polling Loop
 
-WAHA, בניגוד ל-Green-API, אינו חושף תור גלובלי אחד עם מנגנון receive/delete —
-זהו REST API רגיל לאנומרציה של צ'אטים והודעות, בלי "מה חדש מאז הפעם הקודמת"
-מובנה. לכן האחריות לזיהוי "מה חדש" עוברת אלינו, דרך **watermark (חותמת זמן) לכל
-צ'אט בנפרד**, השמור ב-state (ראו `whatsapp_watermarks` ב-"State Storage" למטה).
+WAHA has no single global message queue with receive/delete semantics (unlike Green-API) — it's a plain REST API for enumerating chats and messages, with no built-in "what's new since last time." Tracking "what's new" is therefore the agent's responsibility, via a **per-chat watermark (timestamp)** stored in state (`whatsapp_watermarks`, see "State Storage").
 
-כל האורכסטרציה מול ה-REST API של WAHA (כולל pagination, חישוב watermark, וסינון
-ראשוני) מתבצעת דרך סקריפט Node קריא-בלבד ומתוחזק ב-repo:
-`scripts/waha-poll.mjs` — לא נכתב מחדש בכל ריצה (בניגוד לתבנית הישנה שנוסתה
-בעבר עם Green-API, `logs/poll-run.mjs`, שהייתה ad-hoc ולא tracked).
+All orchestration against the WAHA REST API (pagination, watermark computation, initial filtering) happens in a maintained, version-controlled Node script: `scripts/waha-poll.mjs` (not rewritten each run).
 
-בתחילת כל ריצה:
+At the start of every run:
 
-1. `git pull` את הענף התפעולי כדי לקבל את גרסת ה-state העדכנית ביותר (הריצה
-   הקודמת רצה ב-container אחר לגמרי).
-2. טען את `state/whatsapp-event-agent-state.json` (אם לא קיים — צור עם מבנה ריק,
-   ראו "State Storage"). אם הקובץ קיים אך חסר בו `whatsapp_watermarks` — טען
-   אותו כ-`{}` (default-merge), לא כשגיאה.
-3. הרץ את `node scripts/waha-poll.mjs` (עם `WAHA_URL`, `WAHA_API_KEY`,
-   `WAHA_SESSION` כמשתני סביבה, ו-`whatsapp_watermarks` הנוכחי מועבר לו כקלט).
-   הסקריפט עצמו:
-   a. בודק את סטטוס ה-session (`GET /api/sessions`).
-   b. אם הוא לא נגיש בכלל (קונטיינר/רשת) — מחזיר שגיאה.
-   c. אם הוא נגיש אך `status != "WORKING"` — מחזיר `ok:false` עם ה-`sessionStatus`.
-   d. אם `status == "WORKING"` — שולף את כל הצ'אטים (`GET /api/{session}/chats`,
-      קריאה אחת), ולכל צ'אט קובע את חלון הזמן לשליפה: אם אין לו watermark —
-      מ-`now - 24h` (backfill ראשוני); אם יש — מ-`watermark + 1` (דלתא בלבד,
-      בלי לעבד מחדש הודעות שכבר טופלו). שולף הודעות עם pagination
-      (`GET /api/{session}/chats/{chatId}/messages`, `filter.timestamp.gte`),
-      מסנן `fromMe == true` ו-`body` ריק — **חוץ מהצ'אט העצמי**: שם `fromMe`
-      הוא תמיד `true` גם על תשובות reply אמיתיות שהמשתמש הקליד בטלפון, אז
-      הודעה עם `replyTo.id` תקין בצ'אט העצמי לא נזרקת (ראו "עדכון קריטי —
-      fromMe חוסם תשובות reply בצ'אט העצמי" למטה). **כולל הודעות מדיה עם caption**: שדה
-      ה-`body` שמוחזר מ-WAHA לכל הודעת `imageMessage`/`videoMessage` הוא כבר
-      טקסט ה-caption הקריא (לא בייטים גולמיים של התמונה) — לכן מספיק להסתמך
-      על `body`/בדיקת ריקנות בלבד, בלי לסנן לפי `hasMedia`. **לעולם לא מורידים
-      או שומרים את קובץ המדיה עצמו** (`media.url`) — רק את טקסט ה-caption.
-      מחשב watermark חדש לכל צ'אט (max timestamp מכל ההודעות שנשלפו לפני
-      הסינון, כולל אלה שסוננו; אם לא נשלפה אף הודעה — `now`, כדי שצ'אט שקט
-      לא ייסרק מחדש 24h בכל שעה).
-   e. מחזיר JSON יחיד ל-stdout:
-      `{ok, sessionStatus, chatsScanned, candidateMessages[], updatedWatermarks{}}`.
-4. פרש את הפלט:
-   a. כשל תקשורת/פלט לא תקין → דווח issue (`issue_key: waha-unreachable`) לפי
-      "מניעת דיווח כפול על תקלות" למטה, דלג על זיהוי אירועים בריצה הזו.
-   b. `ok:false` → דווח issue (`issue_key: waha-session-not-working:{sessionStatus}`)
-      באותו אופן, דלג על זיהוי אירועים בריצה הזו.
-   c. `ok:true` → נקה כל רשומת `waha-unreachable`/`waha-session-not-working:*`
-      פתוחה מ-`issue_reported` (הריצה הצליחה, לפי כלל "נפתר בפועל"), עבד כל
-      איבר ב-`candidateMessages[]` לפי "זיהוי אירוע" ו-"Approval Flow" למטה
-      (בדיוק כמו טקסט רגיל — `chat_id` הוא `from` של WAHA, `chat_name` הוא
-      `name` של הצ'אט מ-`/chats`), ומזג את `updatedWatermarks` לתוך
-      `whatsapp_watermarks` ב-state. אם `paginationCapHits[]` לא ריק — דווח
-      issue נפרד לכל צ'אט (`issue_key: waha-chat-pagination-cap-hit:{chatId}`)
-      לפי אותו מנגנון מניעת דיווח כפול (מקרה נדיר: נפח הודעות חריג בצ'אט אחד
-      שחרג ממגבלת ה-pagination בתוך `waha-poll.mjs`).
-5. עבור לשלב "שעות שקט" כדי להחליט על שליחת התראות, ואז שמור ו-commit+push את
-   ה-state (ראו למטה).
+1. `git pull` the operational branch to get the latest state (the previous run happened in a different container).
+2. Load `state/whatsapp-event-agent-state.json` (create with an empty structure if missing). If the file exists but lacks `whatsapp_watermarks`, treat it as `{}` via default-merge, not as an error.
+3. Run `node scripts/waha-poll.mjs` (env vars `WAHA_URL`, `WAHA_API_KEY`, `WAHA_SESSION`; current `whatsapp_watermarks` passed as input). The script:
+   a. Checks session status (`GET /api/sessions`).
+   b. If unreachable (container/network) → returns an error.
+   c. If reachable but `status != "WORKING"` → returns `ok:false` with `sessionStatus`.
+   d. If `status == "WORKING"` → fetches all chats (`GET /api/{session}/chats`, one call). For each chat: if no watermark exists, fetch from `now - 24h` (initial backfill); otherwise from `watermark + 1` (delta only). Fetches messages with pagination (`GET /api/{session}/chats/{chatId}/messages`, `filter.timestamp.gte`), filtering out `fromMe == true` and empty `body` — **except in the self-chat**, where `fromMe` is always `true` even for genuine reply messages typed on the phone, so a self-chat message with a valid `replyTo.id` is not discarded (see "Critical fix — fromMe blocks replies in the self-chat"). **Includes media captions**: WAHA already returns the readable caption text in `body` for `imageMessage`/`videoMessage` (not raw image bytes), so filtering on `body` alone is sufficient — no need to check `hasMedia`. **The media file itself (`media.url`) is never downloaded or stored** — only the caption text. Computes a new watermark per chat (max timestamp across all fetched messages, including filtered ones; if no messages were fetched, use `now`, so a quiet chat isn't re-scanned 24h back every hour).
+   e. Returns a single JSON object to stdout: `{ok, sessionStatus, chatsScanned, candidateMessages[], updatedWatermarks{}}`.
+4. Parse the output:
+   a. Communication failure / invalid output → report issue (`issue_key: waha-unreachable`, see "Duplicate Issue Reporting Prevention"), skip event detection this run.
+   b. `ok:false` → report issue (`issue_key: waha-session-not-working:{sessionStatus}`), skip event detection this run.
+   c. `ok:true` → clear any open `waha-unreachable`/`waha-session-not-working:*` entries from `issue_reported` (the run succeeded), process each item in `candidateMessages[]` per "Event Detection" and "Approval Flow" (as plain text — `chat_id` is WAHA's `from`, `chat_name` is the chat's `name` from `/chats`), and merge `updatedWatermarks` into `whatsapp_watermarks`. If `paginationCapHits[]` is non-empty, report a separate issue per chat (`issue_key: waha-chat-pagination-cap-hit:{chatId}`) — a rare case of one chat exceeding the pagination limit inside `waha-poll.mjs`.
+5. Proceed to "Quiet Hours" to decide on sending notifications, then save and `git commit` + `push` the state.
 
-## זיהוי אירוע
+## Event Detection
 
-לכל טקסט הודעה שחולץ, בדוק אם יש בו רמזים לאירוע קונקרטי: תאריך ו/או שעה, מיקום,
-ניסוחים כמו "נפגשים", "אירוע", "יום הולדת", "מסיבה", "פגישה", "בואו נ...", קישורי
-Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חולין ללא זמן קונקרטי.
+For each extracted message, check for signals of a concrete event: date and/or time, location, phrases like "let's meet," "event," "birthday," "party," "meeting," Zoom/Meet links, "save the date." Ignore casual chatter with no concrete time.
 
-עבור כל אירוע שזוהה, חלץ: כותרת, התחלה/סיום (בלי שעת סיום מפורשת — ברירת מחדל שעה
-אחת), מיקום (אם יש), אזור זמן (ברירת מחדל `Asia/Jerusalem`). בדוק התנגשויות ביומן
-הראשי (`list_events` על טווח הזמן של האירוע) וסמן אם יש חפיפה.
+For each detected event, extract: title, start/end (default duration of one hour if no end time given), location (if any), timezone (default `Asia/Jerusalem`). Check for conflicts against the primary calendar (`list_events` over the event's time range) and flag overlaps. Always pass `singleEvents=True` and `orderBy='startTime'` on every `list_events` call, to correctly expand recurring events.
 
-**מניעת כפילויות**: לפני רישום הצעה חדשה ב-`pending_events`, בדוק אם כבר קיימת שם
-הצעה זהה (אותו `chat_id`, כותרת/זמן קרובים) — אם כן, אל תוסיף הצעה כפולה; אם ההודעה
-החדשה מוסיפה/מדייקת פרטים (למשל שעה שלא הייתה ידועה קודם) — עדכן את ההצעה הקיימת
-במקום ליצור חדשה.
+**Deduplication**: before adding a new suggestion to `pending_events`, check whether an identical one already exists (same `chat_id`, similar title/time). If so, don't add a duplicate; if the new message adds/refines details (e.g., a time that was previously unknown), update the existing suggestion instead of creating a new one.
 
-## State Storage (תחליף ל-Gmail labels)
+## State Storage
 
-קובץ `state/whatsapp-event-agent-state.json` ב-repo:
+`state/whatsapp-event-agent-state.json`:
 
 ```json
 {
   "pending_events": [
     {
-      "id": "uuid-או-hash-יציב",
+      "id": "uuid-or-stable-hash",
       "chat_id": "972501234567@c.us",
-      "chat_name": "שם הצ'אט, נגזר ישירות משדה name של GET /api/{session}/chats",
-      "source_message_id": "id של ההודעה (שדה WAHA) שתוארה בה האירוע",
+      "chat_name": "taken directly from the `name` field of GET /api/{session}/chats",
+      "source_message_id": "WAHA id of the message the event was detected in",
+      "notification_message_id": "WAHA id.id of the agent's own proposal message sent to the self-chat (populated after sending; used to match replyTo.id)",
       "detected_at": "2026-07-06T10:00:00+03:00",
       "event": {
         "title": "...",
@@ -122,14 +66,14 @@ Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חו
   "notify_queued": [
     {
       "kind": "proposal | created | modified | rejected | duplicate | error | run_summary",
-      "pending_event_id": "מזהה מתוך pending_events (אם רלוונטי)",
-      "text": "הטקסט שיישלח כהתראה למשתמש",
+      "pending_event_id": "id from pending_events, if relevant",
+      "text": "the text to send to the user",
       "queued_at": "2026-07-06T23:10:00+03:00"
     }
   ],
   "issue_reported": [
     {
-      "issue_key": "מזהה יציב לסוג התקלה, למשל waha-session-not-working:FAILED",
+      "issue_key": "stable identifier for the issue type, e.g. waha-session-not-working:FAILED",
       "first_reported_at": "2026-07-06T09:00:00+03:00",
       "description": "..."
     }
@@ -140,369 +84,119 @@ Zoom/Meet, "Save the date". התעלם מהודעות סתמיות/שיחת חו
 }
 ```
 
-- `pending_events` — מחליף את `Ami/Event-Pending`/`Ami/Event-Suggested`: כל אירוע
-  שזוהה ועדיין לא טופל (לא אושר, לא נדחה, לא זוהה ככבר קיים ביומן). כל session
-  (כולל sessions שאינם הריצה התקופתית עצמה) שמקבל מהמשתמש טקסט שנראה כמו
-  אישור/דחייה/בקשת שינוי — חייב קודם לטעון את `pending_events` מה-state file כדי
-  לשחזר אילו הצעות פתוחות קיימות, ולא להסתמך על זיכרון שיחה שאולי לא קיים.
-- `notify_queued` — מחליף את `Ami/Event-Notify-Queued`: הודעות שממתינות לשליחה
-  בגלל שעות שקט (הצעה חדשה, אבל גם תוצאה של אישור/דחייה שטופלו בזמן שעות שקט —
-  ראו "שעות שקט" למטה).
-- `issue_reported` — ראו "מניעת דיווח כפול על תקלות".
-- `whatsapp_watermarks` — מפה מ-`chat_id` לחותמת זמן (unix seconds) של ההודעה
-  האחרונה שנבדקה באותו צ'אט. זהו מנגנון האנטי-כפילות של WAHA (מחליף את
-  `deleteNotification` של Green-API) — ראו "מקור נתונים / לולאת ה-polling"
-  למעלה. חסר מפתח לצ'אט מסוים = מעולם לא נבדק = backfill של 24 שעות אחורה
-  בריצה הבאה.
+- `pending_events` — events detected and not yet resolved (approved/rejected/found to already exist). Any session handling what looks like an approval/rejection/change-request must first reload `pending_events` from the state file rather than relying on conversation memory.
+- `notify_queued` — messages awaiting delivery due to quiet hours (new proposals as well as results of approvals/rejections processed during quiet hours).
+- `issue_reported` — see "Duplicate Issue Reporting Prevention."
+- `whatsapp_watermarks` — maps `chat_id` → unix-seconds timestamp of the last message checked in that chat. Missing key = never checked = 24h backfill on the next run.
 
-בסוף כל ריצה: שמור את הקובץ, `git add`, `git commit` עם הודעה תמציתית, ו-`git push`
-לענף התפעולי. בלי push, הריצה הבאה (container חדש לגמרי, clone מחדש) לא תראה את
-העדכון — זהו ההבדל המרכזי מול תוויות Gmail, שקיימות בשרת חיצוני ולא צריך "לדחוף"
-אותן.
+At the end of every run: save the file, `git add`, `git commit` with a concise message, `git push` to the operational branch. Without pushing, the next run (a fresh container/clone) won't see the update.
 
 ## Approval Flow
 
-לכל הודעת טקסט נכנסת שאינה תיאור של אירוע חדש, בדוק קודם אם קיימת ב-`pending_events`
-הצעה פתוחה מאותו `chat_id`:
+For every incoming text message that is not a new event description, first check `pending_events` for an open suggestion from the same `chat_id`:
 
-- מילים כמו "כן" / "אשר" / "confirm" → **אישור**: צור event ביומן (`create_event`)
-  עם הפרטים שהוצעו. לפני היצירה, בדוק שוב עם `list_events` שלא נוצר כבר אירוע דומה
-  (מניעת כפילות אם אושר בטעות פעמיים, או אם עברו כמה ריצות טריגר מאז ההצעה). לאחר
-  היצירה (או זיהוי שכבר קיים), הסר את ההצעה מ-`pending_events` והוסף רשומת
-  `notify_queued` עם `kind: "created"` (או `"duplicate"` אם כבר היה קיים).
-- מילים כמו "שנה" / "modify" → **בקשת שינוי**: אל תיצור אירוע. סמן את ההצעה כממתינה
-  לפרטים חדשים והוסף ל-`notify_queued` בקשה לפרט מה לשנות (תאריך/שעה/מיקום). כשמגיע
-  הפירוט בהודעה הבאה מאותו `chat_id`, עדכן רק את השדה המבוקש ב-`pending_events` והצע
-  שוב לאישור (חוזר לתחילת הזרימה, לא יוצר עדיין).
-- מילים כמו "לא" / "reject" → **דחייה**: הסר את ההצעה מ-`pending_events` בלי ליצור
-  אירוע. אל תציע שוב את אותה הצעה (אין "checked"-flag נפרד כמו במייל — פשוט אין יותר
-  רשומה פעילה עבורה, וההודעה המקורית כבר לא תיסרק שוב כי היא ישנה יותר מה-watermark
-  של הצ'אט).
-- אם יש כמה הצעות פתוחות בו-זמנית מאותו `chat_id` ולא ברור לאיזו מתייחסת התשובה —
-  יש לשאול את המשתמש לבחור (בהודעת `notify_queued` הבאה) במקום לנחש.
-- אם יש כמה תשובות reply עם `replyTo.id` תואם לאותה הצעה בודדת (לא כמה הצעות —
-  כמה *תשובות* לאותה הצעה) — התשובה עם ה-`timestamp` הגבוה ביותר (המאוחרת
-  כרונולוגית) היא זו שקובעת, והמוקדמות ממנה מתעלמים מהן. ראו "עדכון קריטי —
-  fromMe חוסם תשובות reply בצ'אט העצמי" למטה לרציונל המלא.
+- Words like "yes"/"confirm" → **approval**: create the calendar event (`create_event`) with the proposed details. Before creating, re-check with `list_events` that a duplicate wasn't already created (e.g., double approval, or several trigger runs since the suggestion). Then remove the suggestion from `pending_events` and add a `notify_queued` entry with `kind: "created"` (or `"duplicate"` if it already existed).
+- Words like "change"/"modify" → **change request**: don't create anything. Mark the suggestion as awaiting new details and queue a request asking what to change. When the detail arrives in the next message from the same `chat_id`, update only that field and re-propose for approval (back to the start of this flow).
+- Words like "no"/"reject" → **rejection**: remove the suggestion from `pending_events` without creating an event. It is never re-suggested (the source message is now older than the chat's watermark, so it won't be re-scanned).
+- If several suggestions are open at once for the same `chat_id` and it's unclear which the reply targets, ask the user to choose (via the next `notify_queued` message) instead of guessing.
 
-## סיכום ריצה (Run Summary)
+**Matching a reply to a suggestion**: match `replyTo.id` (from an incoming message) against `notification_message_id` of each `pending_event` in `awaiting_response` status — not against `source_message_id`. An exact match identifies which suggestion the reply is for; the reply's body ("yes"/"no"/"change") determines the action. For `pending_events` created before this field existed (and therefore lacking `notification_message_id`), fall back to a time-window heuristic as a safety net only, not as standard behavior.
 
-בסוף כל ריצה (אחרי סיום לולאת ה-polling, ללא קשר אם זוהו אירועים/תקלות), הוסף
-תמיד רשומה אחת נוספת ל-`notify_queued` מסוג `kind: "run_summary"`: שורה קצרה
-אחת שמסכמת את הריצה בפיד ההתראות — למשל "נבדקו 27 הודעות, לא זוהו אירועים
-חדשים" או "נבדקו 12 הודעות, אירוע אחד הוצע לאישור". זו הודעת מידע בלבד (לא
-דורשת פעולה), ומטרתה רק לאשר בפיד שהריצה התבצעה בפועל — לא תחליף לפרטי
-ההצעות/התוצאות עצמם שכבר נכנסים ל-`notify_queued` בנפרד לפי "Approval Flow"
-למעלה.
+**Multiple replies to the same suggestion**: if several valid replies (matching `replyTo.id`) arrive for one open suggestion, the reply with the highest `timestamp` (chronologically last) wins; earlier ones are ignored. Rationale: a later reply reflects the user's final decision (e.g., "no," then reconsidering to "yes"). See "Last-reply-wins: real-world failure and decision" below for an important caveat about this rule.
 
-רשומת ה-`run_summary` כפופה לאותם כללי שעות שקט כמו כל רשומה אחרת ב-
-`notify_queued` (ראו "שעות שקט" למטה) — בשעות שקט היא נצברת ונשלחת מרוכזת עם
-שאר הרשומות אחרי 07:00, ומחוץ לשעות שקט נשלחת מיד עם סיום הריצה.
+## Run Summary
 
-## שעות שקט (Quiet Hours)
+At the end of every run (after the polling loop, regardless of whether anything was detected), always append one `notify_queued` entry with `kind: "run_summary"`: a short line summarizing the run for the notification feed (e.g. "27 messages checked, no new events detected"). Informational only, not a substitute for the individual proposal/result entries already queued elsewhere. Subject to the same quiet-hours batching as any other `notify_queued` entry.
 
-**22:00–07:00 לפי אזור הזמן Asia/Jerusalem (לא UTC).**
+## Quiet Hours
 
-- לולאת ה-polling, זיהוי האירועים, רישום/עדכון `pending_events`, ובדיקת התנגשויות
-  ביומן ממשיכים לרוץ כרגיל בכל שעה — שום דבר מזה לא נעצר בגלל השעה.
-- מה שנדחה הוא **רק שליחת הודעה יזומה למשתמש** — בין אם זו הצעה חדשה, ובין אם זו
-  תוצאה של טיפול בתשובה שהגיעה בשעות שקט (אירוע נוצר/שונה/נדחה/כבר קיים). כל אלה
-  נכנסים ל-`notify_queued` ונשארים שם.
-- בכל ריצה, לפני שליחת הודעה כלשהי, יש לבדוק את השעה הנוכחית ב-Asia/Jerusalem (למשל
-  `TZ=Asia/Jerusalem date +%H:%M` דרך Bash). אם השעה בין 22:00 ל-07:00 (כולל 22:00,
-  לא כולל 07:00) — **אין שולחים שום הודעה בהרצה הזו**, ומסיימים בשקט (ה-state נשמר
-  ונדחף כרגיל, `notify_queued` נשאר לריצה הבאה).
-- ברגע שהשעה הנוכחית היא 07:00 ואילך: אסוף את **כל** הרשומות ב-`notify_queued`
-  (כולל כאלה שהצטברו מכמה הודעות שונות במהלך הלילה) ושלח **הודעה אחת מרוכזת** אחת
-  למשתמש עם כל התוכן יחד — לא הודעה נפרדת לכל רשומה. לאחר השליחה, רוקן את
-  `notify_queued` (הרשומות שנשלחו בלבד).
-- **אין חריגות** — גם הצעה/עדכון שנראה דחוף לא נשלח מוקדם יותר; הוא ממתין כמו כל
-  השאר עד תום שעות השקט.
-- מחוץ לשעות השקט (07:00–22:00), הודעה על הצעה/תוצאה חדשה שנוספה ל-`notify_queued`
-  באותה הרצה נשלחת מיד (אין צורך להמתין לריצה נוספת).
-- **שני ערוצי פלט נפרדים, לפי סוג ההודעה:**
-  - **הצעת אירוע חדשה** (`kind` שדורש תשובת reply מהמשתמש כדי להתקדם ל-approval
-    flow) — נשלחת כהודעת WhatsApp אמיתית לצ'אט העצמי דרך `POST /api/sendText`,
-    כמתואר ב"אילוץ קריטי" למעלה. זהו החריג היחיד לכלל ה-read-only.
-  - **כל שאר סוגי ה-`notify_queued`** (`kind: "created" | "modified" | "rejected"
-    | "duplicate" | "error" | "run_summary"` — הודעות מידע שלא דורשות תשובה) —
-    נשלחות דרך ntfy (`scripts/ntfy-notify.mjs`, topic קבוע שמור בסביבת המשתמש),
-    לא כהודעת WhatsApp. אם יש כמה רשומות מסוג הזה שהצטברו יחד (למשל אחרי שעות
-    שקט) — נשלחות כהודעת ntfy אחת מרוכזת, לא הודעה נפרדת לכל רשומה.
-  - שני הערוצים כפופים לאותם כללי שעות שקט שתוארו למעלה — גם הצעה חדשה לא נשלחת
-    בשעות שקט, בין אם דרך WhatsApp ובין אם דרך ntfy.
+**22:00–07:00, Asia/Jerusalem (not UTC).**
 
-## מניעת דיווח כפול על תקלות
+- The polling loop, event detection, `pending_events` updates, and conflict checks always run normally regardless of the hour.
+- Only **sending a message to the user** is deferred — whether a new proposal or the result of handling a reply that arrived during quiet hours. All of these go into `notify_queued` and stay there.
+- Before sending anything, check the current time in `Asia/Jerusalem` (e.g. `TZ=Asia/Jerusalem date +%H:%M`). If between 22:00 (inclusive) and 07:00 (exclusive) — **send nothing this run**; finish quietly (state is still saved/pushed as usual).
+- From 07:00 onward: collect **all** entries in `notify_queued` (including ones accumulated overnight from separate messages) and send **one consolidated message**, not one per entry. Afterward, clear the entries that were sent.
+- **No exceptions** — even an urgent-looking proposal waits with everything else until quiet hours end.
+- Outside quiet hours (07:00–22:00), a new entry queued during the current run is sent immediately.
+- **Two separate output channels, by message type:**
+  - **New event proposal** (any `kind` that requires a reply from the user to proceed) — sent as a real WhatsApp message to the self-chat via `POST /api/sendText`, per "Read-only constraint" below. This is the sole exception to the read-only rule.
+  - **Every other `notify_queued` kind** (`created | modified | rejected | duplicate | error | run_summary` — informational, no reply needed) — sent via ntfy (`scripts/ntfy-notify.mjs`, fixed topic `ami-whatsapp-agent-x7k2p`, `POST https://ntfy.sh/<topic>`, message body as UTF-8 text, short `Title` header), not as a WhatsApp message. Multiple accumulated entries of this kind are sent as one consolidated ntfy message.
+  - Both channels obey the same quiet-hours rules above.
 
-זהה לחלוטין ל-Email Agent: תקלה (למשל `waha-unreachable` — הקונטיינר/הרשת לא
-נגישים, או `waha-session-not-working:{status}` — ה-session לא במצב `WORKING`)
-מדווחת פעם אחת בלבד למשתמש, מסומנת ב-`issue_reported` ב-state file לפי
-`issue_key` יציב, ולא מדווחת שוב עד שהיא נפתרת בפועל (כלומר עד שריצה עוקבת
-מצליחה לבצע את אותה פעולה בלי שגיאה — ואז מוסרת הרשומה מ-`issue_reported`).
+## Duplicate Issue Reporting Prevention
 
-## עקרונות
+Identical to the Email Agent: an issue (e.g. `waha-unreachable`, or `waha-session-not-working:{status}`) is reported to the user once, recorded in `issue_reported` by a stable `issue_key`, and not reported again until it's actually resolved (a subsequent run completes the same operation without error, at which point the entry is removed from `issue_reported`).
 
-- הסוכן אף פעם לא יוצר אירוע ביומן בלי אישור מפורש מהמשתמש.
-- בסוף כל ריצה נשלחת שורת סיכום קצרה אחת לפיד ההתראות (ראו "סיכום ריצה" למעלה)
-  — אבל אין הודעות נוספות/חוזרות מעבר לזו כשאין בפועל אירוע/תקלה לדווח עליהם.
-- אין הודעות יזומות בשעות שקט (22:00–07:00, Asia/Jerusalem) — הקריאה ל-WAHA,
-  זיהוי האירועים ובדיקת ההתנגשויות ממשיכים כרגיל, רק השליחה נדחית ומרוכזת.
-- לא לצטט הודעת WhatsApp במלואה — רק את הפרטים הרלוונטיים לאירוע.
-- כל הודעה שנבדקה מתועדת ב-watermark של הצ'אט שלה (עדכון `whatsapp_watermarks`)
-  לפני סיום הריצה, גם אם דולגה ולא הייתה רלוונטית — אחרת אותו צ'אט ייסרק מחדש
-  (backfill מיותר) בריצה הבאה.
+## Core Principles
 
-## אילוץ קריטי: כמעט קריאה בלבד — חריג יחיד ומוגדר לכתיבה לוואטסאפ
+- The agent never creates a calendar event without explicit user approval.
+- Exactly one summary line is sent to the notification feed per run (see "Run Summary") — no extra/repeated messages beyond that when there's nothing to report.
+- No proactive messages during quiet hours (22:00–07:00, Asia/Jerusalem) — polling, detection, and conflict checks continue; only sending is deferred and batched.
+- Never quote a WhatsApp message in full — only the event-relevant details.
+- Every checked message updates its chat's watermark before the run ends, even if skipped as irrelevant — otherwise that chat gets an unnecessary backfill next run.
 
-**עדכון 2026-07-11:** מנגנון האישור (ראו "עדכון לוגיקת אישור —
-notification_message_id" למטה) מבוסס על התאמת `replyTo.id` להודעת ההצעה. אין
-דרך אחרת במערכת הזו לתפוס תשובת אישור/דחייה/שינוי מהמשתמש — לכן שליחת הצעת
-אירוע חדשה **חייבת** לצאת כהודעת WhatsApp אמיתית לצ'אט העצמי, אחרת אין הודעה
-לצטט ואין `replyTo.id` להשוות אליו. זהו חריג יחיד, מוגדר וממצה לכלל
-ה-read-only הכללי:
+## Read-Only Constraint: One Defined Exception for Writing to WhatsApp
 
-**מותר, ורק לכך:** קריאה בודדת ל-`POST /api/sendText` לצ'אט העצמי בלבד, ורק
-כדי לשלוח הצעת אירוע חדשה (או בקשת הבהרה בין כמה הצעות פתוחות) שדורשת תשובת
-`reply` מצוטטת מהמשתמש. מיד לאחר השליחה יש לשמור את ה-`id.id` שחוזר בתשובת
-WAHA בשדה `notification_message_id` של ה-`pending_event` הרלוונטי.
+The approval mechanism depends on matching `replyTo.id` to a suggestion message (see "Approval Flow"). There is no other way in this system to capture an approval/rejection/change reply — so sending a new event proposal **must** go out as a real WhatsApp message to the self-chat, or there's nothing to quote and no `replyTo.id` to compare against. This is the single, fully-scoped exception to the general read-only rule:
 
-**כל שאר ההודעות** (סיכום ריצה, תוצאה אחרי אישור/דחייה/שינוי, דיווח תקלה — כל
-מה שלא דורש תשובת reply מהמשתמש) יוצאות אך ורק דרך ntfy, כמתואר ב"שעות שקט"
-למטה — **לא** כהודעת WhatsApp.
+**Permitted, and only this:** a single `POST /api/sendText` call to the self-chat, only to send a new event proposal (or a disambiguation request among multiple open proposals) that requires a quoted `reply` from the user. Immediately after sending, save the `id.id` returned by WAHA into the relevant `pending_event`'s `notification_message_id` field.
 
-הסוכן **לעולם לא** קורא לשום endpoint אחר של WAHA שכותב/שולח/משנה מצב —
-כולל (בלי להצטמצם ל-) `sendImage`/`sendFile`/`sendLocation`/`sendContactVcard`/
-`sendPoll` וכו', וכן **`POST /api/{session}/chats/{chatId}/messages/read`** —
-למרות שהשם נשמע read-only, לקריאה הזו יש תופעת לוואי אמיתית: היא מסמנת הודעות
-כ"נקראו" בפועל בחשבון הוואטסאפ האמיתי (ווי כחול, איפוס תג "לא נקרא") — **אסורה
-לשימוש בסוכן זה**, בדיוק כמו endpoint שליחה אחר. אין יוצא מן הכלל נוסף מעבר
-לזה שהוגדר למעלה.
+**Everything else** (run summary, post-approval/rejection/change results, issue reports — anything not requiring a reply) goes out via ntfy only, never as a WhatsApp message.
 
-**ה-endpoints המותרים לקריאה מול WAHA:**
+The agent **never** calls any other WAHA endpoint that writes/sends/changes state — including but not limited to `sendImage`/`sendFile`/`sendLocation`/`sendContactVcard`/`sendPoll`, and **`POST /api/{session}/chats/{chatId}/messages/read`** — despite its name, this has a real side effect (marks messages as read on the actual WhatsApp account: blue checkmarks, unread badge reset) and is **forbidden**, exactly like any other send endpoint.
 
+**Allowed read endpoints:**
 - `GET /api/sessions`
 - `GET /api/{session}/chats`
 - `GET /api/{session}/chats/{chatId}/messages`
-- `POST /api/sendText` — **רק** לצ'אט העצמי, **רק** להצעת אירוע חדשה/בקשת
-  הבהרה, כמתואר למעלה.
+- `POST /api/sendText` — **only** to the self-chat, **only** for a new proposal/disambiguation request, as above.
 
-כל endpoint אחר של WAHA אסור לשימוש בסוכן זה, ללא יוצא מן הכלל.
+No other WAHA endpoint may be used by this agent, without exception.
 
-## הרצה מקומית (מסלול ראשי — היחיד האפשרי)
+## Critical Fix — fromMe Blocks Replies in the Self-Chat (2026-07-11)
 
-**סטטוס נכון ל-2026-07-08:** מסלול ה-CLI המקומי הוא **לא רק** המסלול היחיד
-שהוכח כעובד מקצה לקצה — הוא כעת גם המסלול היחיד **האפשרי מבנית**. WAHA רץ
-כקונטיינר Docker מקומי על `localhost:3000` בלבד, ואינו נגיש משום סביבת ענן
-חיצונית (בניגוד ל-Green-API, ששירות ענן שהיה נגיש מכל מקום, אך חסום ספציפית
-ב-egress policy ארגוני). כלומר גם אם חסימת ה-egress שהייתה מול דומייני
-Green-API תיפתר אי-פעם, זה לא ישנה דבר: `cloud trigger` לעולם לא יוכל להגיע
-ל-WAHA שרץ במחשב הזה. **אין להשקיע יותר בנתיב ה-cloud trigger עבור הסוכן הזה.**
+**Root cause found:** the `replyTo.id`-based approval mechanism never actually detected a reply, *even when `replyTo.id` was valid and matched correctly*. `scripts/waha-poll.mjs` filtered `if (m.fromMe) continue;` *before* ever checking `replyTo` — and every approval/rejection reply is sent in the self-chat (since that's where proposals are sent), where **every** message reports `fromMe: true`, including a genuine reply the user typed/swiped on their phone. WhatsApp doesn't distinguish "I sent this to myself via the API" from "I typed this to myself on my phone" — both report `fromMe: true`. Verified manually against a live account: every self-chat reply had a valid `replyTo.id` but was discarded by the `fromMe` filter before that was ever checked.
 
-| | הרצה מקומית (CLI) |
+**Fix**: a `fromMe: true` message is no longer discarded if (a) its chat is the self-chat, and (b) it has a valid `replyTo.id` (which distinguishes a genuine reply from the agent's own original proposal message, which has no `replyTo`). Behavior in all other chats (groups, contacts) is unchanged.
+
+**Self-chat identification — not by comparing `chatId` to `session.me.id`:** an initial attempt to match `m.from` against `chatId` (or `session.me.id` from `GET /api/sessions`) failed: WAHA/WEBJS reports `from` as the account's `@lid` identifier for messages sent via the API (e.g. `153768486285323@lid`), but as the account's `@c.us` phone identifier for messages actually typed on the phone (e.g. `972526031305@c.us`) — two different identifiers for the same account, neither of which reliably equals `chatId` (verified directly against a live WAHA instance). Solution: identify the self-chat once at the start of each run using a more stable rule — the self-chat's name in WhatsApp is always the account's own `pushName` (`session.me.pushName`, since no other contact could have that name), not identifier comparison.
+
+Verified against a live WAHA instance after the fix: 3 historical reply messages (from earlier manual tests, `replyTo.id: "3EB0F01E50E5D02EFE297E"`) surfaced correctly when tested against a rolled-back copy of the state (not the real state, to avoid triggering an unwanted event from old test data). Groups/contacts checked in parallel against the real, unchanged state showed the same 6 candidate messages as before the fix — no regression.
+
+## Last-Reply-Wins Rule: Real-World Failure and Decision (2026-07-11)
+
+**Confirmed with the user (2026-07-11):** when multiple *conflicting* replies arrive for the same open suggestion, the chronologically latest (`timestamp`) reply wins, per "Approval Flow" above.
+
+**This rule produced a wrong outcome in practice, manually reverted (2026-07-11):** applying it literally, `pending_event` `wa-labim-parents-summer-talk-20260712` ("Talk for parents of teens — who's afraid of summer?", 12 Jul 2026 20:00–21:00, Lehavim youth club, source: "Lehavim residents" group) was approved and created on `ami.hadjes@gmail.com` based on the latest of 3 conflicting replies ("yes" at 12:39, after "no" at 09:27 and "No" at 11:26 — all 11 Jul 2026, Asia/Jerusalem). The user **manually deleted the event immediately afterward** (event id `5cf9kc85l48946on4vrubh1g1k`, status `cancelled`) and confirmed on follow-up that "no" was in fact the correct call — the late "yes" was likely a test/mistake, not a genuine change of mind.
+
+**Immediate operational note:** if `waha-poll.mjs` ever re-surfaces any message tied to this case (the source message, the proposal with `notification_message_id: 3EB0F01E50E5D02EFE297E`, or any of the three replies) — **do not recreate this event**. As of this writing there is no technical safeguard against it (confirmed on 2026-07-11: no orphaned record remains anywhere in the state file for this event, so there's nothing to clean up), and no realistic path for it to resurface (all relevant watermarks have already passed these messages) — but if a watermark for either chat is ever reset (state corruption, restore from an old backup, forced backfill), this is an explicit note not to recreate it.
+
+**Proposed disambiguation-step alternative — considered and rejected (2026-07-11):** rather than auto-applying "last reply wins" when more than one valid reply exists, the agent could pause, send a clarification message quoting all conflicting replies (with timestamps) to the self-chat, and require a fresh reply to *that* message as the final word — mirroring the existing "multiple open suggestions, unclear which" handling. This would have prevented the incident above, and arguably fits the "always require explicit approval" principle better (a single unambiguous reply is explicit approval; several conflicting replies arguably aren't). Downside: an extra round-trip, against the whole point of the self-chat reply mechanism (single-step approval, see "Read-only constraint" above); requires extra state (a third `pending_event` status: `awaiting_disambiguation`) and its own `notification_message_id`, plus handling the edge case of the clarification reply itself receiving conflicting replies. **Decision: not implemented** — the last-reply-wins rule stays as-is. This was a deliberate call after weighing both sides with the user, not an open item; worth revisiting only if further real-world cases of conflicting replies causing bad outcomes accumulate.
+
+## Local Execution (Sole Viable Path)
+
+**As of 2026-07-08**, local CLI execution is not just the only path proven to work end-to-end — it's the only one **structurally possible**. WAHA runs only as a local Docker container on `localhost:3000`, unreachable from any external cloud environment (unlike Green-API, a cloud service that was reachable but blocked by org egress policy). So even if that old Green-API egress block were lifted, it wouldn't matter: a cloud trigger can never reach a WAHA instance running on this machine. **No further investment in a cloud-trigger path for this agent.**
+
+| | Local execution (CLI) |
 |---|---|
-| **זמינות** | עובד, תלוי שהמחשב דלוק בשעה העגולה **וגם** ש-Docker Desktop + קונטיינר `waha` רצים ו-session במצב `WORKING` |
-| מנגנון הפעלה | הרצה מתוזמנת (cron מקומי, Task Scheduler) של Claude Code CLI על מחשב המשתמש, מול אותו `state/whatsapp-event-agent-state.json` ב-repo |
-| תלות ברשת | תלוי רק ב-`localhost:3000` (WAHA) — אין תלות ב-egress חיצוני כלשהו לצורך ה-polling עצמו |
-| Secrets | `WAHA_URL`/`WAHA_API_KEY` נטענים מסביבת המשתמש המקומית (ב-`run-whatsapp-agent.ps1`) |
-| Connector (Google Calendar) | מחובר דרך ה-session המקומי של המשתמש |
-| State (git) | `git pull`/`commit`/`push` לענף התפעולי בסוף כל ריצה |
+| Availability | Works, provided the machine is on at the scheduled hour **and** Docker Desktop + the `waha` container are running with the session in `WORKING` state |
+| Trigger mechanism | Scheduled run (local cron / Task Scheduler) of the Claude Code CLI, against the same `state/whatsapp-event-agent-state.json` in the repo |
+| Network dependency | Only `localhost:3000` (WAHA) — no external egress dependency for polling itself |
+| Secrets | `WAHA_URL`/`WAHA_API_KEY` loaded from the local user environment (in `run-whatsapp-agent.ps1`) |
+| Calendar connector | Connected via the user's local session |
+| State (git) | `git pull`/`commit`/`push` to the operational branch at the end of each run |
 
-## הערות תשתית נוספות
+## Infrastructure Notes
 
-- **תלות חדשה ב-Docker**: בניגוד ל-Green-API (שירות ענן מנוהל, תמיד זמין), WAHA
-  דורש שה-Docker Desktop וקונטיינר `waha` ירוצו בפועל על המחשב בזמן הריצה
-  המתוזמנת. `run-whatsapp-agent.ps1` מנסה להפעיל את Docker Desktop אם הוא כבוי
-  (best-effort, לא חוסם) — אבל אם הקונטיינר/ה-session עדיין לא זמינים בפועל,
-  הריצה מדווחת על כך דרך `issue_reported` (ראו "מקור נתונים / לולאת ה-polling")
-  ולא נכשלת בצורה לא מבוקרת.
-- **מפתח ה-API של WAHA מתחדש בכל restart של הקונטיינר** אלא אם הוגדר כ-env var
-  קבוע (`WAHA_API_KEY`) בהרצת הקונטיינר עצמו (`docker run -e WAHA_API_KEY=...`
-  או קובץ compose) — יש לוודא שזה מוגדר כך, אחרת הריצה המתוזמנת תיכשל עם מפתח
-  ישן בכל פעם ש-Docker/הקונטיינר מופעלים מחדש.
-- **אין סיכון של polling חסר בטווח קצר** — מנגנון ה-watermark (ראו "State
-  Storage") שומר per-chat checkpoint, כך שגם אם ריצה אחת נכשלת, הריצה הבאה
-  תשלים את הפער (עד למגבלת ה-pagination cap בתוך `waha-poll.mjs`).
-- **State ב-git**: ה-state חי בתוך ה-repo עצמו. יש לוודא ש-`git push` בסוף כל
-  ריצה מצליח בפועל (לענף התפעולי הקבוע של הסוכן) — אחרת הריצות הבאות יתחילו
-  מ-state מיושן ועלולות לשלוח הצעות/התראות כפולות.
+- **New Docker dependency**: unlike Green-API (a managed cloud service), WAHA requires Docker Desktop and the `waha` container to actually be running at trigger time. `run-whatsapp-agent.ps1` best-effort starts Docker Desktop if it's off (non-blocking); if the container/session still isn't available, the run reports it via `issue_reported` rather than failing uncontrollably.
+- **WAHA's API key rotates on every container restart** unless set as a fixed env var (`WAHA_API_KEY`) at container run time (`docker run -e WAHA_API_KEY=...` or compose) — must be configured this way, or scheduled runs will fail with a stale key whenever Docker/the container restarts.
+- **No meaningful risk of missed polling short-term** — the per-chat watermark mechanism means a failed run is caught up by the next one (up to the pagination cap in `waha-poll.mjs`).
+- **State lives in git** — `git push` at the end of each run must actually succeed (to the agent's fixed operational branch), or subsequent runs start from stale state and risk duplicate suggestions/notifications.
+- **Container rebuild (2026-07-10)**: the `waha` container had gone missing entirely (not even stopped). Recreated with `docker run`, port mapping `3000:3000` (correcting a prior `8080` mismatch against `WAHA_URL`), volume mount from `.waha-sessions` to `/app/.sessions`, explicit `WAHA_DASHBOARD_USERNAME`/`WAHA_DASHBOARD_PASSWORD`, and `--restart unless-stopped` so `docker start waha` in `run-whatsapp-agent.ps1` always finds an existing container after a reboot.
+- **Engine correction (2026-07-10)**: the actual engine is **WEBJS**, not NOWEB as originally documented — confirmed by the session path `.waha-sessions/webjs/default`.
 
-## עדכון ממצאים - בדיקת replyTo (10/07/2026)
+## Resolved Investigation: `filter.timestamp.gte` (2026-07-11)
 
-מנוע בפועל: WEBJS ולא NOWEB כפי שנכתב במקור. הsession הקיים נמצא בנתיב .waha-sessions/webjs/default, מה שמאשר זאת.
+An earlier run log raised an unconfirmed suspicion that WAHA might not be enforcing `filter.timestamp.gte`, based on the same 2 messages reappearing. Verified directly against a live WAHA instance with 4 boundary tests on one chat: `gte` one second after a known message excludes it (later messages only pass); `gte` exactly at a known message's timestamp includes it (inclusive `>=`); a far-future `gte` returns 0 results; no `gte` at all on the same chat returns 73 messages (far more than the filtered result).
 
-בדיקה אמפירית שבוצעה: נשלחה הודעת בדיקה דרך POST /api/sendText לצ'אט העצמי. בוצע reply מצוטט אמיתי מהטלפון (swipe או לחיצה ארוכה ובחירת Reply, לא הקלדת הודעה חדשה).
-
-תוצאה: הודעה נכנסת עם reply מצוטט אמיתי מכילה שדה ברמה עליונה replyTo.id שמכיל בדיוק את הid של ההודעה המקורית. הודעה שנשלחה כתשובה רגילה בלי quote אמיתי לא מכילה שדה replyTo כלל.
-
-מסקנה: replyTo.id הוא מנגנון אישור מדויק ואמין. אין צורך בfallback מבוסס חלון זמן כפתרון עיקרי. ניתן להשאיר fallback רק כרשת ביטחון משנית למקרה קצה שבו replyTo לא נתמך.
-
-תיקון תשתית שבוצע: הקונטיינר waha היה חסר לגמרי, לא רץ ולא קיים אפילו כעצור. נוצר מחדש עם docker run, מיפוי פורט 3000:3000 במקום 8080 הישן שגרם לאי התאמה מול WAHA_URL, מיפוי volume קיים מ .waha-sessions אל /app/.sessions בקונטיינר, ומשתני דשבורד מפורשים WAHA_DASHBOARD_USERNAME ו WAHA_DASHBOARD_PASSWORD לצורך גישה. נוסף גם --restart unless-stopped כדי שהפקודה docker start waha בסקריפט run-whatsapp-agent.ps1 תמיד תמצא קונטיינר קיים אחרי ריבוט של המחשב.
-
-
-## עדכון לוגיקת אישור - notification_message_id (10/07/2026)
-
-בעיה שזוהתה: לכל pending_event יש כיום רק source_message_id, שהוא הID של הודעת המקור שממנה זוהה האירוע (למשל הזמנה לקונצרט). אין שדה שמצביע על הודעת ההצעה/ההתראה שהסוכן עצמו שולח לצ'אט העצמי כדי לבקש אישור. כתוצאה מכך, גם כשreplyTo.id נתמך ועובד, אין מול מה להשוות אותו.
-
-תיקון נדרש בלוגיקת הסוכן: כאשר נשלחת הודעת הצעה/התראה חדשה לצ'אט העצמי דרך POST /api/sendText עבור pending_event חדש, יש לשמור את הid שחוזר מהקריאה הזו (השדה id.id בתשובת WAHA) בשדה חדש בpending_event בשם notification_message_id.
-
-התאמת אישור: כאשר waha-poll.mjs מזהה הודעה נכנסת עם replyToMessageId שאינו null, יש להשוות אותו מול notification_message_id של כל pending_event במצב awaiting_response (לא מול source_message_id). התאמה מדויקת - סימן לאישור. הbody של הודעת התגובה (למשל אישור, לא, שנה) קובע את סוג הפעולה כמו קודם.
-
-fallback: אם pending_event ישן לא כולל notification_message_id (למשל שלושת האירועים שנוצרו לפני התיקון), fallback לחלון זמן נשאר כרשת ביטחון בלבד למקרה הזה בדיוק, ולא כדרך עבודה רגילה.
-
-## עדכון ערוץ התראות — ntfy במקום Remote Control (2026-07-11)
-
-בעיה שזוהתה: "ערוץ ההתראות של הסביבה" (push notification) שהוזכר במקור
-בסעיפי "שעות שקט" ו"אילוץ קריטי" הניח מנגנון push כללי. בפועל, Remote Control
-(הפיצ'ר הרלוונטי היחיד ב-Claude Code) דורש session אינטראקטיבי ומתמשך
-(`--remote-control`/`/remote-control`) ואינו זמין כלל בהרצת `claude -p`
-חד-פעמית (headless, cron-triggered) — המודל שבו רץ הסוכן הזה. לכן push דרך
-Remote Control לא היה ולא יכול לעבוד במודל ההרצה הנוכחי.
-
-תיקון: כל התראת מידע (שלא דורשת תשובת reply — ראו "שעות שקט" למעלה) נשלחת
-דרך **ntfy** (שירות push חינמי, חד-כיווני, מבוסס HTTP POST פשוט):
-
-- Topic קבוע: `ami-whatsapp-agent-x7k2p` (מוגדר בסביבת המשתמש, נרשם מראש
-  באפליקציית ntfy בנייד).
-- שליחה: `POST https://ntfy.sh/<topic>` עם ה-body כטקסט ההודעה (UTF-8), וכותרת
-  (`Title` header) קצרה שמזהה את סוג ההודעה.
-- מומלץ מנגנון קבוע: `scripts/ntfy-notify.mjs` — תסריט Node ייעודי ומתוחזק
-  (בדומה ל-`scripts/waha-poll.mjs`), שמקבל טקסט/כותרת כפרמטרים ומבצע את קריאת
-  ה-POST, כדי לא להסתמך על כך שה-agent "בונה" קריאת HTTP נכונה בכל ריצה
-  מחדש. אם התסריט טרם קיים — יש ליצור אותו.
-- הצעת אירוע חדשה (הדורשת reply) **אינה** עוברת ב-ntfy — היא היחידה שיוצאת
-  כהודעת WhatsApp, כמתואר ב"אילוץ קריטי" למעלה.
-
-## עדכון קריטי — fromMe חוסם תשובות reply בצ'אט העצמי (2026-07-11)
-
-בעיה שזוהתה (ולא הייתה ידועה עד עכשיו): מנגנון האישור מבוסס `replyTo.id`
-(ראו "עדכון לוגיקת אישור — notification_message_id" למעלה) מעולם לא זיהה תשובת
-reply בפועל, **גם כשה-`replyTo.id` תקין ותואם ב-100%** לנתונים הגולמיים
-מ-WAHA. הסיבה: `scripts/waha-poll.mjs` סינן `if (m.fromMe) continue;` *לפני*
-שהגיע לבדוק את `replyTo` בכלל — וכל תגובות האישור/דחייה נשלחות בצ'אט העצמי
-(כי שם נשלחת ההצעה, לפי "אילוץ קריטי"), שם **כל** הודעה מדווחת עם
-`fromMe: true`, כולל תשובה אמיתית שהמשתמש הקליד/החליק (swipe reply) בטלפון
-שלו. WhatsApp לא מבחין בין "אני שלחתי לעצמי דרך ה-API" ל"אני הקלדתי לעצמי
-בטלפון" — שני המקרים מדווחים כ-`fromMe: true`. אומת ידנית מול חשבון אמיתי:
-כל תגובת reply שנשלחה בצ'אט העצמי הכילה `replyTo.id` תקין, אבל נזרקה על ידי
-שורת ה-`fromMe` הרבה לפני שהקוד הגיע לבדוק זאת.
-
-תיקון (ב-`scripts/waha-poll.mjs`): הודעה עם `fromMe: true` לא נזרקת יותר אם
-(א) הצ'אט שלה הוא הצ'אט העצמי, וגם (ב) יש לה `replyTo.id` תקין (שמבדיל תשובת
-reply אמיתית מהודעת ההצעה המקורית של הסוכן עצמו, שלה אין `replyTo`). בכל
-צ'אט אחר (קבוצות, אנשי קשר) ההתנהגות המקורית — זריקת `fromMe: true` —
-נשארה **ללא שינוי**.
-
-**זיהוי הצ'אט העצמי — לא לפי `chatId` מול `session.me.id`:** ניסיון ראשוני
-להשוות `m.from` ל-`chatId` (או ל-`session.me.id` שמוחזר מ-`GET /api/sessions`)
-נכשל: WAHA/WEBJS מדווח את `from` של הודעות שנשלחו דרך ה-API
-(`POST /api/sendText`, כלומר הצעות האירוע של הסוכן עצמו) בזיהוי `@lid` של
-החשבון (למשל `153768486285323@lid`), אבל את `from` של הודעות שהוקלדו בפועל
-בטלפון (תגובות המשתמש) בזיהוי `@c.us` של מספר הטלפון (למשל
-`972526031305@c.us`) — **שתי צורות שונות לאותו חשבון, שאינן תואמות זו לזו
-ואף אחת מהן לא תמיד שווה ל-`chatId`** (אומת ישירות מול WAHA חי). הפתרון
-שנבחר: זיהוי הצ'אט העצמי פעם אחת בתחילת הריצה, לפי כלל יציב יותר — שם הצ'אט
-העצמי ב-WhatsApp הוא תמיד ה-`pushName` של החשבון עצמו (`session.me.pushName`,
-כי אין איש קשר אחר לתת לו שם), לא לפי השוואת מזהים בין `@c.us`/`@lid`.
-
-אומת ידנית מול WAHA חי לאחר התיקון: 3 תשובות reply היסטוריות (מבדיקות ידניות
-קודמות, `replyTo.id: "3EB0F01E50E5D02EFE297E"`) הופיעו ב-`candidateMessages`
-לראשונה (בבדיקה עם watermark מוחזר אחורה על עותק זמני של ה-state, לא על
-ה-state האמיתי — כדי לא לגרום לריצה אוטומטית הבאה ליצור אירוע מנתוני בדיקה
-ישנים וסותרים בלי אישור). קבוצות/אנשי קשר רגילים נבדקו במקביל מול ה-state
-האמיתי הבלתי-משתנה — אותן 6 הודעות מועמדות כמו לפני התיקון, ללא רגרסיה.
-
-**הוכרע (אושר עם המשתמש, 2026-07-11):** כשמגיעות כמה תשובות reply *סותרות*
-לאותה הצעה (`replyTo.id`/`notification_message_id` זהה) — **התשובה האחרונה
-כרונולוגית (`timestamp` הגבוה ביותר) מנצחת**, לא הראשונה. הרציונל: תשובה
-מאוחרת יותר משקפת את ההחלטה הסופית של המשתמש (למשל אם ענה "לא" ואז התחרט
-וענה "כן"). כלל זה חל על "Approval Flow" למעלה בכל מקרה של כמה תשובות תקפות
-(עם `replyTo.id` תואם) לאותה הצעה פתוחה: יש למיין לפי `timestamp` ולהחיל רק
-את המאוחרת ביותר, ולהתעלם מהמוקדמות ממנה (הן לא היו ה"תשובה הסופית").
-
-**עדכון — הכלל הזה הפיק בפועל תוצאה שגויה, בוטל ידנית (2026-07-11):** לפי
-הכלל הזה בדיוק, ה-pending_event `wa-labim-parents-summer-talk-20260712`
-("שיחה עם הורים לנוער - מי מפחד מהקיץ?", 12.7.2026 20:00-21:00, מועדון נוער
-בלהבים, מקור: קבוצת "תושבי להבים - הבית של כולנו") אושר ונוצר ביומן
-`ami.hadjes@gmail.com` לפי התשובה המאוחרת ביותר מבין 3 תשובות סותרות ("כן"
-ב-12:39, אחרי "לא" ב-09:27 ו-"No" ב-11:26 — כל השעות 11.7.2026,
-Asia/Jerusalem). **המשתמש מחק את האירוע ידנית מיד לאחר מכן** (event id
-`5cf9kc85l48946on4vrubh1g1k`, status `cancelled`), ואישר בבדיקה חוזרת מולו
-שההחלטה הנכונה הייתה בעצם "לא" — ה"כן" המאוחר היה כנראה בדיקה/טעות ולא כוונה
-אמיתית, לא תיקון להחלטה קודמת.
-
-**מסקנה תפעולית מיידית:** אם `waha-poll.mjs` "מגלה" מחדש את אחת ההודעות
-הקשורות למקרה הזה (הודעת המקור בקבוצת "תושבי להבים", הצעת ההתראה עם
-`notification_message_id: 3EB0F01E50E5D02EFE297E`, או אחת משלוש התשובות) —
-**אין ליצור את האירוע הזה מחדש**. נכון למועד כתיבת השורות האלה אין לכך
-מנגנון חסימה טכני (בדיקת `state/whatsapp-event-agent-state.json` ב-2026-07-11
-מאשרת שאין שום רשומה יתומה שקשורה לאירוע — לא ב-`pending_events`, לא
-ב-`notify_queued`, לא ב-`issue_reported` — כך שגם אין וגם לא צריך "לנקות"
-כלום שם), וגם אין תרחיש ריאלי שיגרום לכך (ה-watermark של קבוצת "תושבי להבים"
-ושל הצ'אט העצמי כבר עברו את כל ההודעות הרלוונטיות, כך שפולינג רגיל לא יחזור
-עליהן) — אבל אם בעתיד ה-watermark של אחד מהצ'אטים האלה יתאפס/יאבד (למשל
-קובץ state פגום, שחזור מגיבוי ישן, backfill יזום) וההודעות ייסרקו מחדש —
-זו הערה מפורשת: לא ליצור.
-
-ראו גם "שיפור אפשרי לכלל" בהמשך — המקרה הזה הוא הטריגר לשאלה אם בכלל צריך
-ליצור אירוע אוטומטית כשיש כמה תשובות סותרות, או לעצור ולשאול.
-
-### שיפור אפשרי לכלל — הועלה ונדחה (הועלה 2026-07-11, הוכרע 2026-07-11)
-
-הצעה: כש-`waha-poll.mjs` מזהה **יותר מתשובת reply תקפה אחת** (`replyTo.id`
-תואם) לאותה הצעה פתוחה — לא להחיל אוטומטית את כלל "האחרונה מנצחת" וליצור
-אירוע, אלא לעצור, לשלוח הודעת הבהרה חדשה לצ'אט העצמי שמצטטת את כל התשובות
-הסותרות שהתקבלו (עם השעה של כל אחת) ולבקש מהמשתמש לבחור מפורשות, בדיוק כמו
-המנגנון הקיים ל"כמה הצעות פתוחות בו-זמנית ולא ברור לאיזו מתייחסת התשובה"
-("Approval Flow" למעלה). רק תשובה חדשה שמצטטת (reply) את הודעת ההבהרה הזו
-תיחשב הכרעה סופית.
-
-**יתרון:** בדיוק המקרה שקרה כאן (12/07/2026) לא היה קורה — הכרעה אוטומטית
-מתשובות שלפחות אחת מהן ("כן" ב-12:39) לא שיקפה כוונה אמיתית לא הייתה מתבצעת
-בלי לשאול קודם. עקבי יותר עם העיקרון הגלובלי "הסוכן אף פעם לא לוקח פעולה
-בלתי הפיכה בלי אישור מפורש" — תשובה *יחידה* וחד-משמעית היא אישור מפורש
-לפי העיצוב המקורי של מנגנון ה-reply, אבל כמה תשובות *סותרות* הן בעצם מצב
-לא חד-משמעי, ולכן לא באמת "אישור מפורש" כמשמעותו.
-
-**חיסרון עיקרי:** עוד תור הלוך-חזור לפני שהאירוע נוצר, בניגוד למטרה
-המקורית של מנגנון ה-reply לצ'אט העצמי — לאפשר אישור בפעולה אחת בלי
-back-and-forth (ראו "אילוץ קריטי" למעלה). דורש גם state נוסף (`pending_event`
-שלישי, מעין: `status: "awaiting_disambiguation"`) ו-`notification_message_id`
-נפרד להודעת ההבהרה עצמה, עם טיפול בקצה: מה קורה אם *גם* לתשובה להבהרה יש
-כמה תגובות סותרות (נדיר יותר, אבל לא בלתי אפשרי). בפועל, תשובות סותרות
-לאותה הצעה צפויות להיות נדירות מאוד בשימוש אמיתי (המקרה היחיד עד כה נבע
-מבדיקות ידניות של המשתמש עצמו על המנגנון, לא ממשתמש אמיתי שמתלבט) — כך
-שהעלות (חיכוך נוסף) חלה כמעט אך ורק על התרחיש הנדיר הזה, לא על הזרימה
-הרגילה של הצעה יחידה עם תשובה יחידה.
-
-**סטטוס: נשקל ונדחה במפורש (הוחלט עם המשתמש, 2026-07-11).** ההחלטה: **לא
-מיישמים** — כלל "התגובה האחרונה מנצחת" (לעיל) נשאר כפי שהוא, בלי שלב הבהרה
-נוסף. זו הכרעה מודעת אחרי ששני הצדדים (יתרון/חיסרון) הוצגו למשתמש, לא סעיף
-שנשאר פתוח בטעות — אין צורך לשוב ולדון בזה שוב סתם כי מישהו קורא את הסעיף
-ותוהה למה הוא עדיין כאן. אם בעתיד יצטברו עוד מקרים של תשובות סותרות
-שמובילות לתוצאה שגויה (מעבר למקרה הבודד התיעודי לעיל) — שווה לפתוח את
-הדיון הזה מחדש, אבל לא באופן יזום.
-
-## עדכון — נבדק ונסגר: חשד ל-filter.timestamp.gte שלא נאכף (2026-07-11)
-
-ריצה אוטומטית קודמת (log, לפני התיקון ב-`fromMe` לעיל) העלתה חשד לא-מאושר:
-"לא ברור אם `filter.timestamp.gte` בפועל מגביל תוצאות מ-WAHA... זו ההסבר
-הסביר להישנות אותן 2 הודעות". נבדק ישירות מול WAHA חי, עם 4 בדיקות גבול על
-אותו צ'אט (`GET /api/{session}/chats/{chatId}/messages`):
-
-1. `gte` = שנייה אחרי הודעה ידועה → ההודעה הזו לא חוזרת, רק הודעות מאוחרות ממנה.
-2. `gte` = בדיוק timestamp של הודעה ידועה → אותה הודעה כן חוזרת (גבול כולל, `>=`).
-3. `gte` = timestamp עתידי רחוק (`9999999999`) → 0 תוצאות.
-4. בלי פרמטר `gte` בכלל, אותו צ'אט → 73 הודעות (הרבה יותר מהתוצאה המסוננת).
-
-**מסקנה: `filter.timestamp.gte` כן נאכף כראוי בצד השרת.** החשד המקורי היה
-שגוי. הסיבה האמיתית ל"הישנות אותן 2 הודעות" (מתועדת ב-log, לא כאן במקור)
-הייתה **שחיתות נתונים בקובץ ה-state**, לא התנהגות WAHA: (א) BOM בתחילת קובץ
-ה-state גרם ל-`JSON.parse` ב-`loadWatermarks` (`scripts/waha-poll.mjs`)
-להיכשל בשקט ולהחזיר `{}` — כל ה-watermarks אבדו וכל צ'אט חזר ל-backfill מלא
-בכל ריצה; (ב) חלק מה-watermarks נשמרו במילישניות במקום שניות יוניקס (כנדרש),
-מה שיצר ערכי `gte` חסרי משמעות. שני אלה תוקנו כבר בריצות אוטומטיות קודמות
-(BOM הוסר, כל 1010 הערכים הומרו לשניות). אומת ישירות מול הקובץ הנוכחי
-(2026-07-11): אין BOM, כל 1010 רשומות ה-`whatsapp_watermarks` בטווח שניות
-עקבי (`min: 1783625904`, `max: 1783790696`, קרוב ל-`now` בזמן הבדיקה) — אין
-שאריות של אף אחת מהבעיות. אין פעולה נוספת נדרשת.
-
+**Conclusion: `filter.timestamp.gte` is enforced correctly server-side** — the original suspicion was wrong. The actual cause of repeated messages was **state-file corruption**, not WAHA behavior: (a) a BOM at the start of the state file silently broke `JSON.parse` in `loadWatermarks`, resetting all watermarks to `{}` and forcing full backfill every run; (b) some watermarks were stored in milliseconds instead of unix seconds, producing meaningless `gte` values. Both were already fixed in earlier automated runs (BOM removed; all 1,010 values converted to seconds). Verified against the current file (2026-07-11): no BOM, all 1,010 `whatsapp_watermarks` entries consistently in seconds (`min: 1783625904`, `max: 1783790696`, close to `now` at check time) — no remnants of either issue. No further action needed.
