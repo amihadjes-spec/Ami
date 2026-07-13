@@ -36,10 +36,12 @@ function chatIdOf(chat) {
   return typeof chat.id === 'string' ? chat.id : chat.id?._serialized;
 }
 
+// תיקון 1: העברת ה-session כ-Query Parameter בנתיב האוניברסלי החדש של ה-CHATS
 async function fetchChatMessagesSince(chatId, gte) {
   const messages = [];
   for (let page = 0; page < MAX_PAGES_PER_CHAT; page++) {
-    const batch = await getJson(`/api/${WAHA_SESSION}/chats/${encodeURIComponent(chatId)}/messages`, {
+    const batch = await getJson(`/api/chats/${encodeURIComponent(chatId)}/messages`, {
+      session: WAHA_SESSION,
       sortBy: 'timestamp',
       sortOrder: 'asc',
       limit: PAGE_SIZE,
@@ -63,22 +65,13 @@ async function main() {
     return;
   }
 
-  const chats = await getJson(`/api/${WAHA_SESSION}/chats`);
+  // תיקון 2: שינוי נתיב קבלת הצ'אטים לנתיב האוניברסלי עם פרמטר ה-session
+  const chats = await getJson('/api/chats', { session: WAHA_SESSION });
 
   const candidateMessages = [];
   const updatedWatermarks = {};
   const paginationCapHits = [];
 
-  // The self-chat (where the agent posts event proposals and the user
-  // replies to approve/reject them) can't be recognized from a single
-  // message's `from`/`to` fields: WAHA reports the agent's own API-sent
-  // notifications under the account's `@lid` identity, but the user's
-  // replies typed on their phone come back under the `@c.us` (phone number)
-  // identity instead - both forms mean "this account", but they don't match
-  // each other or `chatId` consistently (confirmed against a live WAHA
-  // instance). What *is* stable: WhatsApp shows the self-chat's name as your
-  // own account pushName (there's no contact on the other end to name it
-  // after), so match the chat once, up front.
   const selfChatId = (() => {
     const pushName = session.me && session.me.pushName;
     if (!pushName) return null;
@@ -102,13 +95,6 @@ async function main() {
     if (cappedOut) paginationCapHits.push(chatId);
 
     for (const m of messages) {
-      // fromMe is true for every message in the self-chat, including the
-      // user's own quoted approve/reject replies - only exempt those from
-      // the usual fromMe skip (a present replyTo.id distinguishes a real
-      // reply from the agent's own notification message, which has none),
-      // so the Approval Flow gets a chance to match it against
-      // `notification_message_id`. Every other chat (groups, real contacts)
-      // keeps the original fromMe skip unchanged.
       const isSelfChatReply = chatId === selfChatId && m.fromMe && m.replyTo && m.replyTo.id;
       if (m.fromMe && !isSelfChatReply) continue;
       if (!m.body || !m.body.trim()) continue;
@@ -125,11 +111,6 @@ async function main() {
       });
     }
 
-    // WAHA omits the top-level `timestamp` field on messages when `filter.timestamp.gte`
-    // is used (confirmed against a live WAHA instance), so per-message timestamps from
-    // `fetchChatMessagesSince` can't be used to compute the new watermark. Since we've
-    // now checked this chat's messages up through `now`, use that directly as the
-    // checkpoint instead (never decreases, since it's compared against `watermark` above).
     updatedWatermarks[chatId] = now;
   }
 

@@ -104,39 +104,34 @@ For every incoming text message that is not a new event description, first check
 
 **Multiple replies to the same suggestion**: if several valid replies (matching `replyTo.id`) arrive for one open suggestion, the reply with the highest `timestamp` (chronologically last) wins; earlier ones are ignored. Rationale: a later reply reflects the user's final decision (e.g., "no," then reconsidering to "yes"). See "Last-reply-wins: real-world failure and decision" below for an important caveat about this rule.
 
-## Gmail Pending Integration (Added 2026-07-13)
+## Gmail Pending Integration (Updated 2026-07-13)
 
 At the beginning of the Event Detection phase, the agent must check Gmail for any threads with the label `Ami/Event-Pending`. 
 For each thread found:
-1. Extract the event details, the subject, and the unique Message ID.
+1. Extract the event details, the subject, and the unique Message ID (Thread ID).
 2. Construct a direct URL to the email: `https://mail.google.com/mail/u/0/#inbox/<MESSAGE_ID>`.
-3. Format a dedicated proposal message and inject it into the WhatsApp notification queue (`notify_queued` with `kind: "proposal"` to the self-chat). The message text must include the event details and explicitly append the direct link to the email.
+3. Format a dedicated proposal message and inject it into the WhatsApp notification queue (`notify_queued` with `kind: "proposal"` to the self-chat). 
+
+The message text MUST strictly use the following layout:
+"""
+🤖 *הודעה אוטומטית מסוכן המיילים*
+
+*אירוע:* <EVENT_DETAILS>
+*זמן:* <EVENT_TIME>
+
+🔗 *לינק למייל:* https://mail.google.com/mail/u/0/#inbox/<MESSAGE_ID>
+
+---
+💡 *להרשמה ביומן:* הגב *'מאשר'*
+❌ *להתעלמות/מחיקה:* הגב *'דוחה'*
+"""
+
 4. Once the user replies "yes" / "מאשר" to this specific proposal via WhatsApp:
    - Create the calendar event directly.
    - The event description MUST contain:
      "מקור: נוצר אוטומטית מתוך אימייל"
      "קישור למייל: https://mail.google.com/mail/u/0/#inbox/<MESSAGE_ID>"
    - Update Gmail via tools to remove the `Ami/Event-Pending` label from that thread and add `Ami/Event-Created` so it won't be processed again.
-
-## Run Summary
-
-At the end of every run (after the polling loop, regardless of whether anything was detected), always append one `notify_queued` entry with `kind: "run_summary"`: a short line summarizing the run for the notification feed (e.g. "27 messages checked, no new events detected"). Informational only, not a substitute for the individual proposal/result entries already queued elsewhere. Subject to the same quiet-hours batching as any other `notify_queued` entry.
-
-## Quiet Hours
-
-**22:00–07:00, Asia/Jerusalem (not UTC).**
-
-- The polling loop, event detection, `pending_events` updates, and conflict checks always run normally regardless of the hour.
-- Only **sending a message to the user** is deferred — whether a new proposal or the result of handling a reply that arrived during quiet hours. All of these go into `notify_queued` and stay there.
-- Before sending anything, check the current time in `Asia/Jerusalem` (e.g. `TZ=Asia/Jerusalem date +%H:%M`). If between 22:00 (inclusive) and 07:00 (exclusive) — **send nothing this run**; finish quietly (state is still saved/pushed as usual).
-- From 07:00 onward: collect **all** entries in `notify_queued` (including ones accumulated overnight from separate messages) and send **one consolidated message**, not one per entry. Afterward, clear the entries that were sent.
-- **No exceptions** — even an urgent-looking proposal waits with everything else until quiet hours end.
-- Outside quiet hours (07:00–22:00), a new entry queued during the current run is sent immediately.
-- **Two separate output channels, by message type:**
-  - **New event proposal** (any `kind` that requires a reply from the user to proceed) — sent as a real WhatsApp message to the self-chat via `POST /api/sendText`, per "Read-only constraint" below. This is the sole exception to the read-only rule.
-  - **Every other `notify_queued` kind** (`created | modified | rejected | duplicate | error | run_summary` — informational, no reply needed) — sent via ntfy (`scripts/ntfy-notify.mjs`, fixed topic `ami-whatsapp-agent-x7k2p`, `POST https://ntfy.sh/<topic>`, message body as UTF-8 text, short `Title` header), not as a WhatsApp message. Multiple accumulated entries of this kind are sent as one consolidated ntfy message.
-  - Both channels obey the same quiet-hours rules above.
-
 ## Duplicate Issue Reporting Prevention
 
 Identical to the Email Agent: an issue (e.g. `waha-unreachable`, or `waha-session-not-working:{status}`) is reported to the user once, recorded in `issue_reported` by a stable `issue_key`, and not reported again until it's actually resolved (a subsequent run completes the same operation without error, at which point the entry is removed from `issue_reported`).
@@ -151,22 +146,22 @@ Identical to the Email Agent: an issue (e.g. `waha-unreachable`, or `waha-sessio
 
 ## Read-Only Constraint: One Defined Exception for Writing to WhatsApp
 
+The approval mechanism depends on matching `replyTo.id` to a suggestion message (see "Approval Flow"). There is no other way in this system to capture an## Read-Only Constraint: One Defined Exception for Writing to WhatsApp
+
 The approval mechanism depends on matching `replyTo.id` to a suggestion message (see "Approval Flow"). There is no other way in this system to capture an approval/rejection/change reply — so sending a new event proposal **must** go out as a real WhatsApp message to the self-chat, or there's nothing to quote and no `replyTo.id` to compare against. This is the single, fully-scoped exception to the general read-only rule:
 
-**Permitted, and only this:** a single `POST /api/sendText` call to the self-chat, only to send a new event proposal (or a disambiguation request among multiple open proposals) that requires a quoted `reply` from the user. Immediately after sending, save the `id.id` returned by WAHA into the relevant `pending_event`'s `notification_message_id` field.
+**Permitted, and only this:** a single `POST /api/sendText` call to the self-chat, only to send a new event proposal (or a disambiguation request among multiple open proposals) that requires a quoted `reply` from the user. 
 
-**Everything else** (run summary, post-approval/rejection/change results, issue reports — anything not requiring a reply) goes out via ntfy only, never as a WhatsApp message.
-
-The agent **never** calls any other WAHA endpoint that writes/sends/changes state — including but not limited to `sendImage`/`sendFile`/`sendLocation`/`sendContactVcard`/`sendPoll`, and **`POST /api/{session}/chats/{chatId}/messages/read`** — despite its name, this has a real side effect (marks messages as read on the actual WhatsApp account: blue checkmarks, unread badge reset) and is **forbidden**, exactly like any other send endpoint.
-
-**Allowed read endpoints:**
-- `GET /api/sessions`
-- `GET /api/{session}/chats`
-- `GET /api/{session}/chats/{chatId}/messages`
-- `POST /api/sendText` — **only** to the self-chat, **only** for a new proposal/disambiguation request, as above.
-
-No other WAHA endpoint may be used by this agent, without exception.
-
+**Strict API Call Requirements:**
+- URL Path: `POST /api/sendText` (Universal endpoint, do NOT embed the session name in the URL path).
+- Request Headers: Include `X-Api-Key` and `Content-Type: application/json`.
+- Request Body JSON: MUST explicitly include the `"session"` property alongside `chatId` and `text`. Example structure:
+  ```json
+  {
+    "session": "default",
+    "chatId": "972526031305@c.us",
+    "text": "..."
+  }
 ## Critical Fix — fromMe Blocks Replies in the Self-Chat (2026-07-11)
 
 **Root cause found:** the `replyTo.id`-based approval mechanism never actually detected a reply, *even when `replyTo.id` was valid and matched correctly*. `scripts/waha-poll.mjs` filtered `if (m.fromMe) continue;` *before* ever checking `replyTo` — and every approval/rejection reply is sent in the self-chat (since that's where proposals are sent), where **every** message reports `fromMe: true`, including a genuine reply the user typed/swiped on their phone. WhatsApp doesn't distinguish "I sent this to myself via the API" from "I typed this to myself on my phone" — both report `fromMe: true`. Verified manually against a live account: every self-chat reply had a valid `replyTo.id` but was discarded by the `fromMe` filter before that was ever checked.
