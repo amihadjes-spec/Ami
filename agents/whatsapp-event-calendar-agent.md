@@ -110,7 +110,7 @@ At the beginning of the Event Detection phase, the agent must check Gmail for an
 For each thread found:
 1. Extract the event details, the subject, and the unique Message ID.
 2. Construct a direct URL to the email: `https://mail.google.com/mail/u/0/#inbox/<MESSAGE_ID>`.
-3. Format a dedicated proposal message and inject it into the WhatsApp notification queue (`notify_queued` with `kind: "proposal"` to the self-chat). The message text must include the event details and explicitly append the direct link to the email.
+3. Format a dedicated proposal message and send it IMMEDIATELY as a real WhatsApp message to the self-chat via `POST /api/sendText` (utilizing the allowed write exception), rather than just queuing it in notify_queued. Immediately after sending, capture the returned message ID from WAHA and save it into the relevant pending_event's `notification_message_id` field.
 4. Once the user replies "yes" / "מאשר" to this specific proposal via WhatsApp:
    - Create the calendar event directly.
    - The event description MUST contain:
