@@ -104,6 +104,20 @@ For every incoming text message that is not a new event description, first check
 
 **Multiple replies to the same suggestion**: if several valid replies (matching `replyTo.id`) arrive for one open suggestion, the reply with the highest `timestamp` (chronologically last) wins; earlier ones are ignored. Rationale: a later reply reflects the user's final decision (e.g., "no," then reconsidering to "yes"). See "Last-reply-wins: real-world failure and decision" below for an important caveat about this rule.
 
+## Gmail Pending Integration (Added 2026-07-13)
+
+At the beginning of the Event Detection phase, the agent must check Gmail for any threads with the label `Ami/Event-Pending`. 
+For each thread found:
+1. Extract the event details, the subject, and the unique Message ID.
+2. Construct a direct URL to the email: `https://mail.google.com/mail/u/0/#inbox/<MESSAGE_ID>`.
+3. Format a dedicated proposal message and inject it into the WhatsApp notification queue (`notify_queued` with `kind: "proposal"` to the self-chat). The message text must include the event details and explicitly append the direct link to the email.
+4. Once the user replies "yes" / "מאשר" to this specific proposal via WhatsApp:
+   - Create the calendar event directly.
+   - The event description MUST contain:
+     "מקור: נוצר אוטומטית מתוך אימייל"
+     "קישור למייל: https://mail.google.com/mail/u/0/#inbox/<MESSAGE_ID>"
+   - Update Gmail via tools to remove the `Ami/Event-Pending` label from that thread and add `Ami/Event-Created` so it won't be processed again.
+
 ## Run Summary
 
 At the end of every run (after the polling loop, regardless of whether anything was detected), always append one `notify_queued` entry with `kind: "run_summary"`: a short line summarizing the run for the notification feed (e.g. "27 messages checked, no new events detected"). Informational only, not a substitute for the individual proposal/result entries already queued elsewhere. Subject to the same quiet-hours batching as any other `notify_queued` entry.
