@@ -19,7 +19,13 @@
     }
   ],
   "notify_queued": [],
-  "issue_reported": [],
+  "issue_reported": [
+    {
+      "issue_key": "waha-session-not-working:FAILED",
+      "first_reported_at": "2026-07-13T08:24:00+03:00",
+      "description": "WAHA session 'default' במצב FAILED (logout בפועל מהוואטסאפ, לא בעיית docker/רשת - נצפה בלוגי הקונטיינר 'Session has been logged out!'). דורש סריקת QR מחדש בדשבורד WAHA."
+    }
+  ],
   "whatsapp_watermarks": {
     "120363418733302181@g.us": 1783877191,
     "120363422893729196@g.us": 1783877191,
