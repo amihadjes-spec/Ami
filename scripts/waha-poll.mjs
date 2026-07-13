@@ -36,12 +36,10 @@ function chatIdOf(chat) {
   return typeof chat.id === 'string' ? chat.id : chat.id?._serialized;
 }
 
-// תיקון 1: העברת ה-session כ-Query Parameter בנתיב האוניברסלי החדש של ה-CHATS
 async function fetchChatMessagesSince(chatId, gte) {
   const messages = [];
   for (let page = 0; page < MAX_PAGES_PER_CHAT; page++) {
-    const batch = await getJson(`/api/chats/${encodeURIComponent(chatId)}/messages`, {
-      session: WAHA_SESSION,
+    const batch = await getJson(`/api/${WAHA_SESSION}/chats/${encodeURIComponent(chatId)}/messages`, {
       sortBy: 'timestamp',
       sortOrder: 'asc',
       limit: PAGE_SIZE,
@@ -65,8 +63,7 @@ async function main() {
     return;
   }
 
-  // תיקון 2: שינוי נתיב קבלת הצ'אטים לנתיב האוניברסלי עם פרמטר ה-session
-  const chats = await getJson('/api/chats', { session: WAHA_SESSION });
+  const chats = await getJson(`/api/${WAHA_SESSION}/chats`);
 
   const candidateMessages = [];
   const updatedWatermarks = {};
