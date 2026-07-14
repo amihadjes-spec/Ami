@@ -64,6 +64,7 @@ async function main() {
   const url = `https://ntfy.sh/${encodeURIComponent(topic)}?${params.toString()}`;
   const headers = {
     "Content-Type": "text/plain; charset=utf-8",
+    "User-Agent": "ntfy-notify/1.0 (whatsapp-agent)",
   };
 
   try {
