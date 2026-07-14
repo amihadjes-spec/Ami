@@ -1,4 +1,4 @@
-# Agent: WhatsApp Event Detection + Calendar-Add Suggestion
+﻿# Agent: WhatsApp Event Detection + Calendar-Add Suggestion
 
 ## Purpose
 
@@ -82,130 +82,42 @@ For each detected event, extract: title, start/end (default duration of one hour
     "972501234567@c.us": 1751980800
   }
 }
-```
-
-- `pending_events` — events detected and not yet resolved (approved/rejected/found to already exist). Any session handling what looks like an approval/rejection/change-request must first reload `pending_events` from the state file rather than relying on conversation memory.
-- `notify_queued` — messages awaiting delivery due to quiet hours (new proposals as well as results of approvals/rejections processed during quiet hours).
-- `issue_reported` — see "Duplicate Issue Reporting Prevention."
-- `whatsapp_watermarks` — maps `chat_id` → unix-seconds timestamp of the last message checked in that chat. Missing key = never checked = 24h backfill on the next run.
-
-At the end of every run: save the file, `git add`, `git commit` with a concise message, `git push` to the operational branch. Without pushing, the next run (a fresh container/clone) won't see the update.
-
 ## Approval Flow
 
-For every incoming text message that is not a new event description, first check `pending_events` for an open suggestion from the same `chat_id`:
+The agent strictly operates on a **suggest-and-confirm** loop. It never writes to the calendar automatically.
 
-- Words like "yes"/"confirm" → **approval**: create the calendar event (`create_event`) with the proposed details. Before creating, re-check with `list_events` that a duplicate wasn't already created (e.g., double approval, or several trigger runs since the suggestion). Then remove the suggestion from `pending_events` and add a `notify_queued` entry with `kind: "created"` (or `"duplicate"` if it already existed).
-- Words like "change"/"modify" → **change request**: don't create anything. Mark the suggestion as awaiting new details and queue a request asking what to change. When the detail arrives in the next message from the same `chat_id`, update only that field and re-propose for approval (back to the start of this flow).
-- Words like "no"/"reject" → **rejection**: remove the suggestion from `pending_events` without creating an event. It is never re-suggested (the source message is now older than the chat's watermark, so it won't be re-scanned).
-- If several suggestions are open at once for the same `chat_id` and it's unclear which the reply targets, ask the user to choose (via the next `notify_queued` message) instead of guessing.
+### 1. Detection & Notification Queue
+When a candidate event is detected:
+* If no conflict is found, queue a `proposal` notification.
+* If a conflict is found, append a conflict warning directly to the proposal text (e.g., "⚠️ Note: This conflicts with 'Lunch with Avi' at 13:00") and queue it.
+* Set status to `awaiting_notify`.
 
-**Matching a reply to a suggestion**: match `replyTo.id` (from an incoming message) against `notification_message_id` of each `pending_event` in `awaiting_response` status — not against `source_message_id`. An exact match identifies which suggestion the reply is for; the reply's body ("yes"/"no"/"change") determines the action. For `pending_events` created before this field existed (and therefore lacking `notification_message_id`), fall back to a time-window heuristic as a safety net only, not as standard behavior.
+### 2. Quiet Hours & Notification Dispatch
+To avoid buzzing the phone at night, notifications are buffered through `notify_queued` and dispatched based on local time (`Asia/Jerusalem`):
+* **Quiet Hours**: 22:00 to 08:00.
+* If current time is inside quiet hours: Leave items in `notify_queued`.
+* If current time is outside quiet hours: Send all queued messages to the self-chat (`GET /api/{session}/chats` to find the self-chat ID, then `POST /api/{session}/sendText`).
+* For each successfully sent proposal, update its status in `pending_events` to `awaiting_response` and store the sent message's ID in `notification_message_id`. This ID is critical for matching future replies.
 
-**Multiple replies to the same suggestion**: if several valid replies (matching `replyTo.id`) arrive for one open suggestion, the reply with the highest `timestamp` (chronologically last) wins; earlier ones are ignored. Rationale: a later reply reflects the user's final decision (e.g., "no," then reconsidering to "yes"). See "Last-reply-wins: real-world failure and decision" below for an important caveat about this rule.
+### 3. User Response Processing (Self-Chat)
+During the polling phase, when scanning messages from the **self-chat**:
+* Look for messages that are replies to a proposal (using `replyTo.id`).
+* Match the `replyTo.id` against the `notification_message_id` of items in `pending_events` with status `awaiting_response`.
+* Parse the user's reply text:
+  * **Approved** (e.g., "כן", "yes", "אשר", "יאללה", 👍): Call Google Calendar API `insert_event` to create the event. Send a success confirmation back to the self-chat, remove the event from `pending_events`, and queue a `created` notification.
+  * **Rejected** (e.g., "לא", "no", "ביטול", "אל תוסיף", 👎): Update status to `rejected`, clean it up from `pending_events`, and optionally acknowledge.
+  * **Modified** (e.g., "תשנה ל-18:00", "change to 6pm"): Extract the new parameters, update the draft in `pending_events`, check conflicts again, and send an updated proposal.
 
-## Gmail Pending Integration (Updated 2026-07-13)
-
-At the beginning of the Event Detection phase, the agent must check Gmail for any threads with the label `Ami/Event-Pending`. 
-For each thread found:
-1. Extract the event details, the subject, and the unique Message ID (Thread ID).
-2. Construct a direct URL to the email: `https://mail.google.com/mail/u/0/#inbox/<MESSAGE_ID>`.
-3. Format a dedicated proposal message and inject it into the WhatsApp notification queue (`notify_queued` with `kind: "proposal"` to the self-chat). 
-
-The message text MUST strictly use the following layout:
-"""
-🤖 *הודעה אוטומטית מסוכן המיילים*
-
-*אירוע:* <EVENT_DETAILS>
-*זמן:* <EVENT_TIME>
-
-🔗 *לינק למייל:* https://mail.google.com/mail/u/0/#inbox/<MESSAGE_ID>
-
----
-💡 *להרשמה ביומן:* הגב *'מאשר'*
-❌ *להתעלמות/מחיקה:* הגב *'דוחה'*
-"""
-
-4. Once the user replies "yes" / "מאשר" to this specific proposal via WhatsApp:
-   - Create the calendar event directly.
-   - The event description MUST contain:
-     "מקור: נוצר אוטומטית מתוך אימייל"
-     "קישור למייל: https://mail.google.com/mail/u/0/#inbox/<MESSAGE_ID>"
-   - Update Gmail via tools to remove the `Ami/Event-Pending` label from that thread and add `Ami/Event-Created` so it won't be processed again.
 ## Duplicate Issue Reporting Prevention
 
-Identical to the Email Agent: an issue (e.g. `waha-unreachable`, or `waha-session-not-working:{status}`) is reported to the user once, recorded in `issue_reported` by a stable `issue_key`, and not reported again until it's actually resolved (a subsequent run completes the same operation without error, at which point the entry is removed from `issue_reported`).
+To prevent spamming the user with repeated notifications about the same infrastructure failure (like WAHA being offline for hours):
+* Maintain `issue_reported` in the state file.
+* Before reporting an operational issue (unreachable API, session down, etc.), check if `issue_reported` already contains a matching `issue_key`.
+* If it exists: **Do not send another notification**.
+* If it does not exist: Send the alert immediately to the self-chat (bypassing quiet hours if it's a critical system error) and add it to `issue_reported` with the current timestamp.
+* When a run succeeds, clear all matching issue keys from `issue_reported`.
 
-## Core Principles
+## Critical fix — fromMe blocks replies in the self-chat
 
-- The agent never creates a calendar event without explicit user approval.
-- Exactly one summary line is sent to the notification feed per run (see "Run Summary") — no extra/repeated messages beyond that when there's nothing to report.
-- No proactive messages during quiet hours (22:00–07:00, Asia/Jerusalem) — polling, detection, and conflict checks continue; only sending is deferred and batched.
-- Never quote a WhatsApp message in full — only the event-relevant details.
-- Every checked message updates its chat's watermark before the run ends, even if skipped as irrelevant — otherwise that chat gets an unnecessary backfill next run.
-
-## Read-Only Constraint: One Defined Exception for Writing to WhatsApp
-
-The approval mechanism depends on matching `replyTo.id` to a suggestion message (see "Approval Flow"). There is no other way in this system to capture an## Read-Only Constraint: One Defined Exception for Writing to WhatsApp
-
-The approval mechanism depends on matching `replyTo.id` to a suggestion message (see "Approval Flow"). There is no other way in this system to capture an approval/rejection/change reply — so sending a new event proposal **must** go out as a real WhatsApp message to the self-chat, or there's nothing to quote and no `replyTo.id` to compare against. This is the single, fully-scoped exception to the general read-only rule:
-
-**Permitted, and only this:** a single `POST /api/sendText` call to the self-chat, only to send a new event proposal (or a disambiguation request among multiple open proposals) that requires a quoted `reply` from the user. 
-
-**Strict API Call Requirements:**
-- URL Path: `POST /api/sendText` (Universal endpoint, do NOT embed the session name in the URL path).
-- Request Headers: Include `X-Api-Key` and `Content-Type: application/json`.
-- Request Body JSON: MUST explicitly include the `"session"` property alongside `chatId` and `text`. Example structure:
-  ```json
-  {
-    "session": "default",
-    "chatId": "972526031305@c.us",
-    "text": "..."
-  }
-## Critical Fix — fromMe Blocks Replies in the Self-Chat (2026-07-11)
-
-**Root cause found:** the `replyTo.id`-based approval mechanism never actually detected a reply, *even when `replyTo.id` was valid and matched correctly*. `scripts/waha-poll.mjs` filtered `if (m.fromMe) continue;` *before* ever checking `replyTo` — and every approval/rejection reply is sent in the self-chat (since that's where proposals are sent), where **every** message reports `fromMe: true`, including a genuine reply the user typed/swiped on their phone. WhatsApp doesn't distinguish "I sent this to myself via the API" from "I typed this to myself on my phone" — both report `fromMe: true`. Verified manually against a live account: every self-chat reply had a valid `replyTo.id` but was discarded by the `fromMe` filter before that was ever checked.
-
-**Fix**: a `fromMe: true` message is no longer discarded if (a) its chat is the self-chat, and (b) it has a valid `replyTo.id` (which distinguishes a genuine reply from the agent's own original proposal message, which has no `replyTo`). Behavior in all other chats (groups, contacts) is unchanged.
-
-**Self-chat identification — not by comparing `chatId` to `session.me.id`:** an initial attempt to match `m.from` against `chatId` (or `session.me.id` from `GET /api/sessions`) failed: WAHA/WEBJS reports `from` as the account's `@lid` identifier for messages sent via the API (e.g. `153768486285323@lid`), but as the account's `@c.us` phone identifier for messages actually typed on the phone (e.g. `972526031305@c.us`) — two different identifiers for the same account, neither of which reliably equals `chatId` (verified directly against a live WAHA instance). Solution: identify the self-chat once at the start of each run using a more stable rule — the self-chat's name in WhatsApp is always the account's own `pushName` (`session.me.pushName`, since no other contact could have that name), not identifier comparison.
-
-Verified against a live WAHA instance after the fix: 3 historical reply messages (from earlier manual tests, `replyTo.id: "3EB0F01E50E5D02EFE297E"`) surfaced correctly when tested against a rolled-back copy of the state (not the real state, to avoid triggering an unwanted event from old test data). Groups/contacts checked in parallel against the real, unchanged state showed the same 6 candidate messages as before the fix — no regression.
-
-## Last-Reply-Wins Rule: Real-World Failure and Decision (2026-07-11)
-
-**Confirmed with the user (2026-07-11):** when multiple *conflicting* replies arrive for the same open suggestion, the chronologically latest (`timestamp`) reply wins, per "Approval Flow" above.
-
-**This rule produced a wrong outcome in practice, manually reverted (2026-07-11):** applying it literally, `pending_event` `wa-labim-parents-summer-talk-20260712` ("Talk for parents of teens — who's afraid of summer?", 12 Jul 2026 20:00–21:00, Lehavim youth club, source: "Lehavim residents" group) was approved and created on `ami.hadjes@gmail.com` based on the latest of 3 conflicting replies ("yes" at 12:39, after "no" at 09:27 and "No" at 11:26 — all 11 Jul 2026, Asia/Jerusalem). The user **manually deleted the event immediately afterward** (event id `5cf9kc85l48946on4vrubh1g1k`, status `cancelled`) and confirmed on follow-up that "no" was in fact the correct call — the late "yes" was likely a test/mistake, not a genuine change of mind.
-
-**Immediate operational note:** if `waha-poll.mjs` ever re-surfaces any message tied to this case (the source message, the proposal with `notification_message_id: 3EB0F01E50E5D02EFE297E`, or any of the three replies) — **do not recreate this event**. As of this writing there is no technical safeguard against it (confirmed on 2026-07-11: no orphaned record remains anywhere in the state file for this event, so there's nothing to clean up), and no realistic path for it to resurface (all relevant watermarks have already passed these messages) — but if a watermark for either chat is ever reset (state corruption, restore from an old backup, forced backfill), this is an explicit note not to recreate it.
-
-**Proposed disambiguation-step alternative — considered and rejected (2026-07-11):** rather than auto-applying "last reply wins" when more than one valid reply exists, the agent could pause, send a clarification message quoting all conflicting replies (with timestamps) to the self-chat, and require a fresh reply to *that* message as the final word — mirroring the existing "multiple open suggestions, unclear which" handling. This would have prevented the incident above, and arguably fits the "always require explicit approval" principle better (a single unambiguous reply is explicit approval; several conflicting replies arguably aren't). Downside: an extra round-trip, against the whole point of the self-chat reply mechanism (single-step approval, see "Read-only constraint" above); requires extra state (a third `pending_event` status: `awaiting_disambiguation`) and its own `notification_message_id`, plus handling the edge case of the clarification reply itself receiving conflicting replies. **Decision: not implemented** — the last-reply-wins rule stays as-is. This was a deliberate call after weighing both sides with the user, not an open item; worth revisiting only if further real-world cases of conflicting replies causing bad outcomes accumulate.
-
-## Local Execution (Sole Viable Path)
-
-**As of 2026-07-08**, local CLI execution is not just the only path proven to work end-to-end — it's the only one **structurally possible**. WAHA runs only as a local Docker container on `localhost:3000`, unreachable from any external cloud environment (unlike Green-API, a cloud service that was reachable but blocked by org egress policy). So even if that old Green-API egress block were lifted, it wouldn't matter: a cloud trigger can never reach a WAHA instance running on this machine. **No further investment in a cloud-trigger path for this agent.**
-
-| | Local execution (CLI) |
-|---|---|
-| Availability | Works, provided the machine is on at the scheduled hour **and** Docker Desktop + the `waha` container are running with the session in `WORKING` state |
-| Trigger mechanism | Scheduled run (local cron / Task Scheduler) of the Claude Code CLI, against the same `state/whatsapp-event-agent-state.json` in the repo |
-| Network dependency | Only `localhost:3000` (WAHA) — no external egress dependency for polling itself |
-| Secrets | `WAHA_URL`/`WAHA_API_KEY` loaded from the local user environment (in `run-whatsapp-agent.ps1`) |
-| Calendar connector | Connected via the user's local session |
-| State (git) | `git pull`/`commit`/`push` to the operational branch at the end of each run |
-
-## Infrastructure Notes
-
-- **New Docker dependency**: unlike Green-API (a managed cloud service), WAHA requires Docker Desktop and the `waha` container to actually be running at trigger time. `run-whatsapp-agent.ps1` best-effort starts Docker Desktop if it's off (non-blocking); if the container/session still isn't available, the run reports it via `issue_reported` rather than failing uncontrollably.
-- **WAHA's API key rotates on every container restart** unless set as a fixed env var (`WAHA_API_KEY`) at container run time (`docker run -e WAHA_API_KEY=...` or compose) — must be configured this way, or scheduled runs will fail with a stale key whenever Docker/the container restarts.
-- **No meaningful risk of missed polling short-term** — the per-chat watermark mechanism means a failed run is caught up by the next one (up to the pagination cap in `waha-poll.mjs`).
-- **State lives in git** — `git push` at the end of each run must actually succeed (to the agent's fixed operational branch), or subsequent runs start from stale state and risk duplicate suggestions/notifications.
-- **Container rebuild (2026-07-10)**: the `waha` container had gone missing entirely (not even stopped). Recreated with `docker run`, port mapping `3000:3000` (correcting a prior `8080` mismatch against `WAHA_URL`), volume mount from `.waha-sessions` to `/app/.sessions`, explicit `WAHA_DASHBOARD_USERNAME`/`WAHA_DASHBOARD_PASSWORD`, and `--restart unless-stopped` so `docker start waha` in `run-whatsapp-agent.ps1` always finds an existing container after a reboot.
-- **Engine correction (2026-07-10)**: the actual engine is **WEBJS**, not NOWEB as originally documented — confirmed by the session path `.waha-sessions/webjs/default`.
-
-## Resolved Investigation: `filter.timestamp.gte` (2026-07-11)
-
-An earlier run log raised an unconfirmed suspicion that WAHA might not be enforcing `filter.timestamp.gte`, based on the same 2 messages reappearing. Verified directly against a live WAHA instance with 4 boundary tests on one chat: `gte` one second after a known message excludes it (later messages only pass); `gte` exactly at a known message's timestamp includes it (inclusive `>=`); a far-future `gte` returns 0 results; no `gte` at all on the same chat returns 73 messages (far more than the filtered result).
-
-**Conclusion: `filter.timestamp.gte` is enforced correctly server-side** — the original suspicion was wrong. The actual cause of repeated messages was **state-file corruption**, not WAHA behavior: (a) a BOM at the start of the state file silently broke `JSON.parse` in `loadWatermarks`, resetting all watermarks to `{}` and forcing full backfill every run; (b) some watermarks were stored in milliseconds instead of unix seconds, producing meaningless `gte` values. Both were already fixed in earlier automated runs (BOM removed; all 1,010 values converted to seconds). Verified against the current file (2026-07-11): no BOM, all 1,010 `whatsapp_watermarks` entries consistently in seconds (`min: 1783625904`, `max: 1783790696`, close to `now` at check time) — no remnants of either issue. No further action needed.
+By default, WAHA polling filters out `fromMe == true` to avoid processing the agent's own messages. However, in the self-chat, **every message sent by the user from their phone also has `fromMe == true`**.
+* **Rule**: When scanning the self-chat, do NOT discard messages where `fromMe == true` if they contain a valid `replyTo.id` pointing to an active proposal. These are treated as genuine user approvals.
