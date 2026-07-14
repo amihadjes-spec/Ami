@@ -40,6 +40,41 @@ For each detected event, extract: title, start/end (default duration of one hour
 
 Do not disqualify a message just because it reads as promotional or commercial (e.g. a price, a phone number for registration, a sign-up form link, phrasing like "quick sign-up" or "limited spots"). All monitored groups are ones the user has explicitly opted into, so a group activity/workshop/course/trip announcement with a concrete date, time, and location (e.g. a guided off-road driving session, a group hike, a paid class) is just as valid a candidate as a personal invite — evaluate purely on whether date/time/location signals are present, not on whether the message "sounds like an ad." When extracting the title for such messages, use the core activity/headline (e.g. "הדרכת נהיגת שטח קבוצתית — יער בן שמן"), not the full marketing copy.
 
+## Gmail-Sourced Proposals (Bridge to Email Agent)
+
+**Why this exists**: [`agents/email-event-calendar-agent.md`](email-event-calendar-agent.md) runs as a cloud-hosted routine and has no network path to WAHA — WAHA only listens on `localhost:3000` on this machine, and no tunnel/webhook exposes it externally (confirmed by inspecting the WAHA container's port bindings and checking for any tunnel process/service on this machine — none exists). So when the email agent detects an event and labels a Gmail thread `Ami/Event-Pending`, it has no way to actually deliver a WhatsApp confirmation itself. This agent — which already runs locally with a working WAHA connection — relays those proposals on its behalf, reusing the exact same `pending_events` / `notify_queued` / Approval Flow machinery as natively-detected WhatsApp events.
+
+**History**: a first version of this bridge was added 2026-07-13 (commits `0b098ba`, `55583a9`, `9c60744`, `91a2b15`) and sent one real proposal ("פגישה בקפה גרג") that was approved and created a real calendar event. It was removed the next morning (`37e0948`) because it let **two independent channels** — a reply in Gmail (watched by the email agent) and a reply in WhatsApp (watched by this agent) — both resolve the *same* `Ami/Event-Pending` thread, risking a duplicate calendar event or a race between the two. This version closes that gap with an idempotent "already notified" marker and a cross-channel handoff label (below) instead of relying on both sides just hoping the other doesn't also act.
+
+**Detection** (at the start of every Event Detection phase, alongside the normal WAHA scan):
+1. Query Gmail for threads labeled `Ami/Event-Pending` but **not** `Ami/Event-Notified-WhatsApp` — the second label is the idempotency guard that stops the same thread being proposed again on a later run.
+2. For each such thread, extract the event details, subject, and the thread/message ID; construct the email link `https://mail.google.com/mail/u/0/#inbox/<ID>`.
+3. Add a `pending_events` entry exactly as for a native detection (see "State Storage"), with `source: "gmail"`, `gmail_thread_id: "<ID>"`, and `gmail_link` set, `chat_id` set to the self-chat's own ID (delivery and replies both happen there), status `awaiting_notify`.
+4. Queue the proposal via the normal "Detection & Notification Queue" flow below — **do not** send it immediately outside that flow; it must go through the same quiet-hours batching as everything else.
+
+**Message template** (required verbatim for `source: "gmail"` proposals — this is the exact text confirmed working on 2026-07-13):
+```
+🤖 *הודעה אוטומטית מסוכן המיילים*
+
+*אירוע:* <EVENT_DETAILS>
+*זמן:* <EVENT_TIME>
+
+🔗 *לינק למייל:* <gmail_link>
+
+---
+💡 *להרשמה ביומן:* הגב *'מאשר'*
+❌ *להתעלמות/מחיקה:* הגב *'דוחה'*
+```
+
+**Idempotency marker**: immediately after a `source: "gmail"` proposal is successfully sent via `POST /api/sendText` (in "Quiet Hours & Notification Dispatch" below), apply the Gmail label `Ami/Event-Notified-WhatsApp` to that thread, in the same step as saving `notification_message_id`. Never apply this label before a send actually succeeds — a failed send must be retried on the next run, not silently treated as sent.
+
+**Resolution and cross-channel handoff** (extends "User Response Processing" below, for `pending_events` entries with `source: "gmail"`):
+* **Approved**: before creating the event, re-fetch the Gmail thread's *current* labels. If `Ami/Event-Pending` is already gone (the email agent's own Gmail-reply channel resolved it first), **do not create the event** — remove the local `pending_events` entry and queue a `duplicate` notification instead of `created`. Otherwise, run the standard dedup check (see "User Response Processing"), then create the event with a description containing `"מקור: נוצר אוטומטית מתוך אימייל"` and `"קישור למייל: <gmail_link>"`, then update Gmail: remove `Ami/Event-Pending`, add `Ami/Event-Created`. Removing `Ami/Event-Pending` is what makes the email agent's own `label:Ami/Event-Pending` query naturally skip this thread from then on — that's the handoff.
+* **Rejected**: remove `Ami/Event-Pending` from the Gmail thread (do not add `Ami/Event-Created`) — matches the email agent's own rejection labeling (leaves `Ami/Event-Checked` + `Ami/Event-Suggested` only). Remove the local `pending_events` entry.
+* **Modified**: handled like a native modification (update the local draft, re-check conflicts, re-propose); the eventual approval/rejection still follows the label handoff above.
+
+This agent never reads or acts on a *Gmail-side* reply — that stays the email agent's job. It only ever writes the three labels named above (`Ami/Event-Notified-WhatsApp`, `Ami/Event-Pending` removal, `Ami/Event-Created`), and only on threads it is itself resolving via a WhatsApp reply it received.
+
 ## State Storage
 
 `state/whatsapp-event-agent-state.json`:
@@ -53,6 +88,9 @@ Do not disqualify a message just because it reads as promotional or commercial (
       "chat_name": "taken directly from the `name` field of GET /api/{session}/chats",
       "source_message_id": "WAHA id of the message the event was detected in",
       "notification_message_id": "WAHA id.id of the agent's own proposal message sent to the self-chat (populated after sending; used to match replyTo.id)",
+      "source": "whatsapp | gmail (default whatsapp if omitted)",
+      "gmail_thread_id": "Gmail thread/message ID — present only when source is gmail",
+      "gmail_link": "https://mail.google.com/mail/u/0/#inbox/<gmail_thread_id> — present only when source is gmail",
       "detected_at": "2026-07-06T10:00:00+03:00",
       "event": {
         "title": "...",
@@ -99,15 +137,15 @@ To avoid buzzing the phone at night, notifications are buffered through `notify_
 * **Quiet Hours**: 22:00 to 08:00.
 * If current time is inside quiet hours: Leave items in `notify_queued`.
 * If current time is outside quiet hours: Send all queued messages to the self-chat (`GET /api/{session}/chats` to find the self-chat ID, then `POST /api/{session}/sendText`).
-* For each successfully sent proposal, update its status in `pending_events` to `awaiting_response` and store the sent message's ID in `notification_message_id`. This ID is critical for matching future replies.
+* For each successfully sent proposal, update its status in `pending_events` to `awaiting_response` and store the sent message's ID in `notification_message_id`. This ID is critical for matching future replies. For `source: "gmail"` entries specifically, also apply the `Ami/Event-Notified-WhatsApp` label to the Gmail thread at this point (see "Gmail-Sourced Proposals") — only after the send actually succeeds.
 
 ### 3. User Response Processing (Self-Chat)
 During the polling phase, when scanning messages from the **self-chat**:
 * Look for messages that are replies to a proposal (using `replyTo.id`).
 * Match the `replyTo.id` against the `notification_message_id` of items in `pending_events` with status `awaiting_response`.
 * Parse the user's reply text:
-  * **Approved** (e.g., "כן", "yes", "אשר", "יאללה", 👍): Call Google Calendar API `insert_event` to create the event. Send a success confirmation back to the self-chat, remove the event from `pending_events`, and queue a `created` notification.
-  * **Rejected** (e.g., "לא", "no", "ביטול", "אל תוסיף", 👎): Update status to `rejected`, clean it up from `pending_events`, and optionally acknowledge.
+  * **Approved** (e.g., "כן", "yes", "אשר", "יאללה", 👍): Before creating anything, run a final `list_events` check over the event's time range (`fullText` search on the title; for `source: "gmail"` entries, search for the `gmail_link`/thread ID instead, since it will appear verbatim in that event's description) to confirm it wasn't already created by another run or the other channel. If it already exists, skip creation, remove the event from `pending_events`, and queue a `duplicate` notification. Otherwise call Google Calendar API `insert_event` to create the event. Send a success confirmation back to the self-chat, remove the event from `pending_events`, and queue a `created` notification. For `source: "gmail"` entries, follow the additional cross-channel handoff in "Gmail-Sourced Proposals" (re-check `Ami/Event-Pending` is still present before creating, then swap it for `Ami/Event-Created`).
+  * **Rejected** (e.g., "לא", "no", "ביטול", "אל תוסיף", 👎): Update status to `rejected`, clean it up from `pending_events`, and optionally acknowledge. For `source: "gmail"` entries, also remove `Ami/Event-Pending` from the Gmail thread (see "Gmail-Sourced Proposals").
   * **Modified** (e.g., "תשנה ל-18:00", "change to 6pm"): Extract the new parameters, update the draft in `pending_events`, check conflicts again, and send an updated proposal.
 
 ## Duplicate Issue Reporting Prevention
