@@ -1,153 +1,62 @@
-# סוכן: זיהוי אירועים במייל + הצעה להוספה ליומן
+# Agent: Email Event Detection + Calendar Proposal
 
-## מטרה
+## Purpose
+Scan the Gmail inbox, detect emails containing concrete events/meetings (date + time), check for conflicts in the calendar, and **propose** adding the event to the user's calendar—without creating it automatically unless explicit confirmation is given.
 
-לסרוק את תיבת ה-inbox, לזהות מיילים המתארים אירוע/פגישה קונקרטיים (תאריך + שעה),
-לבדוק אם יש התנגשות עם היומן הקיים, ו**להציע** למשתמש להוסיף את האירוע ליומן —
-בלי ליצור אותו אוטומטית ללא אישור מפורש.
+## Trigger
+Since Gmail MCP tools lack an active "new email arrived" webhook, the trigger is implemented via a scheduled hourly poll (cron) to check for unexamined messages. 
 
-## טריגר
+Each execution creates a clean, stateless session. All persistent state is tracked directly via Gmail labels rather than session memory.
 
-הכלים הזמינים (Gmail MCP) לא חושפים webhook אמיתי של "מייל חדש הגיע" — רק חיפוש/polling.
-לכן הטריגר ממומש כ-trigger מתוזמן (cron, כל שעה) שבודק אם הצטברו מיילים חדשים שעדיין
-לא נבדקו. זהו הקירוב הזמין הכי קרוב ל"כניסת מייל חדש" בסביבה הנוכחית.
+## State Management & Duplicate Prevention
+The agent manages state using four dedicated Gmail labels (automatically created on the first run if missing):
 
-כל הפעלה יוצרת session חדש ונקי (stateless) — כל המצב נשמר בפועל דרך תוויות (labels)
-ב-Gmail, ולא בזיכרון השיחה.
+* `Ami/Event-Checked`: Thread has been processed (whether an event was found or not).
+* `Ami/Event-Suggested`: An event was detected and proposed to the user.
+* `Ami/Event-Pending`: Proposal is awaiting user feedback. This acts as the definitive source of truth across different sessions. Any session handling a user response must first query `label:Ami/Event-Pending` to recover open proposals.
+* `Ami/Event-Notify-Queued`: A detected proposal waiting to be sent to the user (held during quiet hours or batched).
 
-## מצב / מניעת עיבוד כפול
+## Execution Workflow (Each Run)
+1. **Verify Labels:** Ensure `Ami/Event-Checked` and `Ami/Event-Suggested` exist (`list_labels` / `create_label`).
+2. **Fetch New Emails:** Query `search_threads` for `in:inbox -label:Ami/Event-Checked` (up to 50 per run). If empty, exit silently.
+3. **Analyze & Process:** Fetch full content (`get_thread`, FULL_CONTENT) per thread. Look for explicit dates/times (invitations, confirmations, Zoom/Meet links, `.ics` files). Ignore newsletters, generic ads, or dateless receipts.
+4. **Mark as Checked:** Immediately apply `Ami/Event-Checked` to the thread.
+5. **Extract Metadata:** For valid events, extract: Title, Start/End time (default duration: 1 hour), Location/Link, and Timezone (default: `Asia/Jerusalem`).
+6. **Conflict Check:** Query `list_events` on the event's timeframe to flag overlapping entries.
+7. **Queue Proposals:** If an event is found, apply `Ami/Event-Suggested`, `Ami/Event-Pending`, and `Ami/Event-Notify-Queued` to the thread.
+8. **Dispatch Notification:** Evaluate the current time in `Asia/Jerusalem` to handle messaging based on Quiet Hours.
 
-שלוש תוויות משתמש ב-Gmail:
+## Quiet Hours
+**22:00–07:00 (Asia/Jerusalem timezone, not UTC).**
 
-- `Ami/Event-Checked` — ה-thread נבדק (בין אם נמצא בו אירוע ובין אם לא).
-- `Ami/Event-Suggested` — זוהה בו אירוע והוצעה הוספה ליומן.
-- `Ami/Event-Pending` — ההצעה ממתינה לתשובת המשתמש (אישור/דחייה/שינוי). מוסרת
-  ברגע שהתשובה מטופלת (אירוע נוצר, נדחה, או זוהה ככבר קיים).
-- `Ami/Event-Notify-Queued` — הצעה שזוהתה אך עדיין לא נשלחה כהודעה למשתמש (כי
-  זוהתה בשעות שקט, או כדי לרכז כמה הצעות בהודעה אחת). מוסרת ברגע שההודעה נשלחת
-  בפועל. ראו "שעות שקט" למטה.
+* **Processing Continues:** The hourly cron continues to scan, apply labels, and check conflicts normally during these hours.
+* **Delayed Delivery:** Active push notifications/messages to the user are paused. Proposals receive the `Ami/Event-Notify-Queued` label and are held.
+* **Morning Digest:** In the first hourly run after 07:00, the agent collects all threads marked with `Ami/Event-Notify-Queued` and dispatches **a single consolidated digest message** to the user. After sending, the `Ami/Event-Notify-Queued` label is removed.
+* **No Exceptions:** Urgent or close-proximity events detected during overnight hours are also held until 07:00. Outside of quiet hours, notifications are dispatched instantly.
 
-התוויות נוצרות אוטומטית בהרצה הראשונה אם אינן קיימות.
+## Confirmation Flow & Event Creation
+When a user responds to a proposal (immediately or in a later session), the agent processes the action as follows:
 
-**חשוב:** כל הרצה של הטריגר יוצרת session חדש וללא זיכרון מהרצות קודמות. לכן
-`Ami/Event-Pending`, יחד עם תוכן ה-thread עצמו, הם המקור היחיד לאמת לגבי אילו
-הצעות עדיין פתוחות — לא הזיכרון של איזושהי שיחה ספציפית. כל session (בין אם
-session שנוצר על ידי הטריגר התקופתי, ובין אם שיחה רגילה עם המשתמש) שמקבל
-מהמשתמש הודעה שנראית כמו אישור/דחייה/בקשת שינוי לגבי אירוע — חייב קודם לחפש
-`label:Ami/Event-Pending` ב-Gmail כדי לשחזר אילו הצעות ממתינות קיימות, ולא
-להסתמך על הקשר שיחה שאולי לא קיים ב-session הנוכחי.
+1. **Approval Detection:** Affirmative responses containing phrases like "yes", "confirm", "go ahead", "כן", "מאשר", "✓" trigger event creation.
+2. **Calendar Insertion:** The agent executes `create_event` using the verified details. The `Ami/Event-Pending` label is then removed.
+3. **Double-Booking Prevention:** Right before executing `create_event`, the agent runs a final `list_events` check (via timeframe and `fullText`) to ensure the event wasn't already created (e.g., accidental duplicate approval). If it exists, creation is skipped, `Ami/Event-Pending` is removed, and the user is informed.
+4. **Modification Requests:** If the user updates specific details (e.g., "Yes, but change the time to 15:00"), the agent updates the target field, preserves the remaining original data, and creates the event.
+5. **Rejection:** Negative responses ("no", "skip", "לא") cancel creation. `Ami/Event-Pending` is removed, leaving only `Ami/Event-Checked` and `Ami/Event-Suggested`.
 
-## תהליך העבודה (בכל הפעלה)
+### Edge Case Handlers
+* **Ambiguous Approvals:** If a user says "yes" but multiple pending proposals exist, the agent references the open `Ami/Event-Pending` threads and prompts the user to select the correct one.
+* **Delayed Approvals:** If a user approves a proposal hours later across a new session, the script accurately recovers the context using the `Ami/Event-Pending` thread markup.
+* **Re-evaluation Safeguard:** Previously rejected or processed threads never trigger duplicate proposals because they lack the `Ami/Event-Pending` markup and are skipped by the initial `Ami/Event-Checked` inbox filter.
 
-1. ודא שהתוויות `Ami/Event-Checked` ו-`Ami/Event-Suggested` קיימות (`list_labels`,
-   וביצירה חסרה — `create_label`).
-2. חפש מיילים חדשים לבדיקה: `search_threads` עם query
-   `in:inbox -label:Ami/Event-Checked` (עד 50 בכל הרצה).
-3. אם לא נמצא כלום — לסיים בשקט, בלי סיכום ובלי התראה.
-4. עבור כל thread: לשלוף תוכן מלא (`get_thread`, FULL_CONTENT) ולבדוק אם מדובר
-   באירוע/פגישה אמיתיים עם תאריך ושעה קונקרטיים — הזמנות, פגישות, אישורי הזמנה/כרטיסים,
-   קישורי Zoom/Meet, קובצי `.ics`, ניסוחים כמו "מוזמנים", "נשמח לראותכם", "Save the date".
-   להתעלם מניוזלטרים, פרסומות וקבלות ללא תאריך ושעה קונקרטיים.
-5. לסמן כל thread שנבדק בתווית `Ami/Event-Checked`, כדי לא לבדוק אותו שוב.
-6. עבור כל אירוע שזוהה, לחלץ: כותרת, התחלה/סיום (בלי שעת סיום מפורשת — ברירת מחדל
-   שעה אחת), מיקום (כתובת או קישור), אזור זמן (ברירת מחדל `Asia/Jerusalem`).
-7. לבדוק התנגשויות ביומן הראשי (`list_events` על טווח הזמן של האירוע) ולסמן אירועים
-   חופפים אם יש.
-8. אם זוהו אירועים: לסמן את ה-thread גם ב-`Ami/Event-Suggested`, `Ami/Event-Pending`
-   ו-`Ami/Event-Notify-Queued` (לא ליצור אירוע ביומן בשלב הזה, ולא לשלוח הודעה עדיין —
-   שליחת ההודעה מתבצעת בשלב נפרד, בכפוף לשעות שקט, ראו הסעיף הבא).
-9. בדוק את השעה הנוכחית ב-Asia/Jerusalem ופעל לפי "שעות שקט" למטה כדי להחליט אם
-   ומתי לשלוח למשתמש הודעה מרוכזת על ההצעות שב-`Ami/Event-Notify-Queued`.
-10. תשובת המשתמש (מיידית או מאוחרת) לגבי כל הצעה מטופלת לפי זרימת האישור שמתוארת
-    בסעיף שאחרי זה.
+## Core Principles
+* The agent never modifies or creates calendar events without explicit user confirmation.
+* Operates silently when no action is required—no spam or empty summaries.
+* Strictly respects Quiet Hours for user alerts while maintaining background tasks.
+* Never quotes full email bodies; extracts and presents only essential event metadata.
 
-## שעות שקט (Quiet Hours)
+## Deployment & Execution
+Deployed as a scheduled cron task via `claude-code-remote`. The script creates a new session per run and interacts with the Gmail and Google Calendar MCP connectors.
 
-**22:00–07:00 לפי אזור הזמן Asia/Jerusalem (לא UTC).**
-
-- הטריגר השעתי ממשיך לרוץ כרגיל כל הזמן — סריקה, תיוג (`Ami/Event-Checked`,
-  `Ami/Event-Suggested`, `Ami/Event-Pending`), ובדיקת התנגשויות ביומן. שום דבר
-  מהתהליך הזה לא נעצר בגלל השעה.
-- מה שנדחה הוא **רק שליחת הודעה יזומה למשתמש** (הסיכום/ההצעה, וכל push notification
-  שנובע ממנה). הצעה שזוהתה מקבלת את התווית `Ami/Event-Notify-Queued` ונשארת איתה.
-- בכל הרצה, לפני שליחת הודעה כלשהי, יש לבדוק את השעה הנוכחית ב-Asia/Jerusalem
-  (למשל עם `TZ=Asia/Jerusalem date +%H:%M` דרך Bash). אם השעה בין 22:00 ל-07:00
-  (כולל 22:00, לא כולל 07:00) — **אין שולחים שום הודעה יזומה בהרצה הזו**, ומסיימים
-  בשקט (התוויות `Ami/Event-Notify-Queued` נשארות לריצה הבאה).
-- ברגע שהשעה הנוכחית היא 07:00 ואילך (כלומר בהרצה השעתית הראשונה אחרי 07:00):
-  לאסוף את **כל** ה-threads המתויגים `Ami/Event-Notify-Queued` (כולל כאלה שהצטברו
-  מכמה הצעות שונות במהלך הלילה), ולשלוח **הודעה אחת מרוכזת** עם כל ההצעות יחד —
-  לא הודעה נפרדת לכל אחת. לאחר השליחה, להסיר את `Ami/Event-Notify-Queued` מכל
-  thread שנכלל בהודעה (התוויות `Ami/Event-Suggested`/`Ami/Event-Pending` נשארות
-  עד שהמשתמש יגיב).
-- **אין חריגות** — גם הצעה שנראית דחופה (למשל אירוע שמתחיל בעוד שעה) לא נשלחת
-  מוקדם יותר; היא ממתינה כמו כל השאר עד תום שעות השקט.
-- מחוץ לשעות השקט (07:00–22:00), הודעה על הצעה חדשה שזוהתה באותה הרצה נשלחת
-  מיד כרגיל (אין צורך להמתין לריצה נוספת).
-
-## עדכון: זרימת אישור ויצירת אירוע
-
-לאחר שהאג'נט מזהה אירוע פוטנציאלי ושולח הצעה למשתמש, יש לפעול כך:
-
-1. **המתנה לתשובה** — האג'נט ממתין לתגובת המשתמש בהודעה הבאה בשיחה (או בהרצה הבאה
-   של הטריגר / session אחר לגמרי, אם המשתמש לא הגיב מיד — ראו "מניעת עיבוד כפול"
-   לעיל לגבי איך משחזרים הצעות ממתינות בין sessions).
-2. **זיהוי אישור** — התשובה נחשבת לאישור אם היא מכילה ניסוחים כמו: "כן", "מאשר",
-   "תיצור", "אוקיי", "בסדר", "✓", "yes", "confirm", "go ahead" (בעברית ובאנגלית כאחד).
-3. **יצירת האירוע** — במקרה של אישור, האג'נט יוצר את האירוע ביומן Google Calendar
-   הראשי (`create_event`), עם כל הפרטים שהוצעו (כותרת, זמן, מיקום אם קיים, משתתפים
-   אם צוינו). לאחר היצירה, מסירים את `Ami/Event-Pending` מה-thread.
-4. **טיפול בבקשת שינוי** — אם המשתמש מבקש שינוי (למשל "כן אבל בשעה 15:00" או "תזיז
-   ליום שלישי") — האג'נט מעדכן את פרטי האירוע בהתאם לפני היצירה, ולא יוצר את ההצעה
-   המקורית.
-5. **דחייה** — אם התשובה היא דחייה ("לא", "לא צריך", "תתעלם") — לא נוצר אירוע,
-   מסירים את `Ami/Event-Pending`, וה-thread נשאר מסומן כטופל (`Ami/Event-Checked`
-   + `Ami/Event-Suggested` בלבד, בלי `Pending`) כדי שלא תישלח שוב הצעה עליו.
-6. **מניעת כפילות** — לפני היצירה, האג'נט בודק שוב עם `list_events` (חיפוש בטווח
-   הזמן הרלוונטי, ואפשר גם עם `fullText`) אם כבר קיים אירוע דומה ביומן (אותו נושא/
-   זמן קרוב) כדי לא ליצור כפילות — גם אם עברו כמה טריגרים מאז ההצעה המקורית, וגם
-   אם המשתמש כבר אישר בעבר (למשל אישור כפול בטעות). אם אירוע דומה כבר קיים —
-   לא ליצור שוב, להסיר את `Ami/Event-Pending`, ולהודיע שהאירוע כבר קיים ביומן.
-7. **מעקב הצעות ממתינות** — האג'נט שומר רשימת הצעות שממתינות לאישור באמצעות
-   התווית הייעודית `Ami/Event-Pending` (ראו לעיל), כדי לזהות תשובות מאוחרות גם אם
-   עברו כמה ריצות של הטריגר או sessions שונים לגמרי.
-
-### מקרי קצה לבדיקה
-
-- משתמש עונה "כן" אבל בלי הקשר ברור לאיזו הצעה — האג'נט מזהה לפי חיפוש
-  `label:Ami/Event-Pending` ותוכן ה-thread/ים איזו הצעה רלוונטית (ואם יש כמה
-  הצעות פתוחות בו-זמנית ולא ברור לאיזו מתייחסת התשובה — לשאול את המשתמש לבחור).
-- משתמש מאשר אחרי כמה שעות, וכבר עברו 2-3 ריצות טריגר — ה-thread עדיין מתויג
-  `Ami/Event-Pending`, כך שהתשובה המאוחרת עדיין ניתנת לשחזור ולטיפול.
-- משתמש מבקש שינוי חלקי (רק שעה, רק תאריך, רק מיקום) — משנים רק את השדה
-  המבוקש ומשאירים את שאר הפרטים כפי שהוצעו במקור.
-- אישור כפול בטעות (המשתמש עונה "כן" פעמיים) — בדיקת מניעת הכפילות (סעיף 6)
-  מזהה שהאירוע כבר נוצר ולא יוצרת אותו פעמיים.
-- הצעה שנדחתה בעבר לא חוזרת ולא נשלחת שוב — כי אין עליה יותר `Ami/Event-Pending`,
-  וה-thread כבר מסומן `Ami/Event-Checked` כך שהוא לא נסרק שוב מלכתחילה.
-- כמה הצעות מזוהות בלילה (שעות שקט) — כולן נשלחות בהודעה אחת מרוכזת בריצה
-  הראשונה אחרי 07:00, לא כל אחת בנפרד.
-- אירוע שנראה דחוף שזוהה בשעות שקט — עדיין ממתין ל-07:00 כמו כל השאר, בלי חריגה.
-
-## עקרונות
-
-- הסוכן אף פעם לא יוצר אירוע ביומן בלי אישור מהמשתמש.
-- שקט כשאין מה לדווח — אין התראות סרק.
-- אין הודעות יזומות בשעות שקט (22:00–07:00, Asia/Jerusalem) — הסריקה, התיוג
-  ובדיקת ההתנגשויות ממשיכים כרגיל, רק השליחה נדחית ומרוכזת.
-- לא לצטט גוף מייל במלואו — רק את הפרטים הרלוונטיים לאירוע.
-
-## הפעלה בפועל
-
-מומש כ-trigger מתוזמן (cron) דרך claude-code-remote, שיוצר session חדש בכל הפעלה
-ומריץ את התהליך שמתואר למעלה מול כלי ה-MCP של Gmail ו-Google Calendar.
-
-### חשוב — הפעלת ה-connectors מחדש בכל יצירת trigger חדש
-
-`create_trigger`/`update_trigger` לא חושפים פרמטר לקביעת אילו MCP connectors
-(Gmail, Google Calendar) מחוברים ל-trigger — זו הגדרה ברמת ה-routine/session
-שמנוהלת רק דרך ה-UI של claude-code-remote, ולא עוברת אוטומטית מ-trigger ישן
-ל-trigger חדש שמחליף אותו. **בכל פעם שנוצר מחדש trigger** (למשל כי צריך לשנות
-את ה-prompt, וה-API לא תומך בעריכת prompt קיים) — יש לוודא ידנית בממשק
-שה-connectors Gmail ו-Google Calendar מופעלים (enabled) עבור ה-trigger/routine
-החדש, אחרת ההרצה נכשלת גם אם ה-connectors מחוברים ברמת הארגון.
+### Critical Infrastructure Note — Re-enabling Connectors
+The `create_trigger` and `update_trigger` API endpoints do not expose parameters to declare active MCP connectors. This setting is strictly managed at the routine/session level via the `claude-code-remote` UI. 
+**Whenever a trigger is re-created or overwritten** (e.g., to modify a system prompt), you must manually verify in the UI that the **Gmail** and **Google Calendar** connectors are explicitly enabled for the new trigger, otherwise the routine execution will fail.
