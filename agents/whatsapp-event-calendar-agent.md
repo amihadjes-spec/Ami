@@ -38,6 +38,8 @@ For each detected event, extract: title, start/end (default duration of one hour
 
 **Deduplication**: before adding a new suggestion to `pending_events`, check whether an identical one already exists (same `chat_id`, similar title/time). If so, don't add a duplicate; if the new message adds/refines details (e.g., a time that was previously unknown), update the existing suggestion instead of creating a new one.
 
+Do not disqualify a message just because it reads as promotional or commercial (e.g. a price, a phone number for registration, a sign-up form link, phrasing like "quick sign-up" or "limited spots"). All monitored groups are ones the user has explicitly opted into, so a group activity/workshop/course/trip announcement with a concrete date, time, and location (e.g. a guided off-road driving session, a group hike, a paid class) is just as valid a candidate as a personal invite — evaluate purely on whether date/time/location signals are present, not on whether the message "sounds like an ad." When extracting the title for such messages, use the core activity/headline (e.g. "הדרכת נהיגת שטח קבוצתית — יער בן שמן"), not the full marketing copy.
+
 ## State Storage
 
 `state/whatsapp-event-agent-state.json`:
