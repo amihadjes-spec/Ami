@@ -52,7 +52,7 @@ Do not disqualify a message just because it reads as promotional or commercial (
 3. Add a `pending_events` entry exactly as for a native detection (see "State Storage"), with `source: "gmail"`, `gmail_thread_id: "<ID>"`, and `gmail_link` set, `chat_id` set to the self-chat's own ID (delivery and replies both happen there), status `awaiting_notify`.
 4. Queue the proposal via the normal "Detection & Notification Queue" flow below — **do not** send it immediately outside that flow; it must go through the same quiet-hours batching as everything else.
 
-**Message template** (required verbatim for `source: "gmail"` proposals — this is the exact text confirmed working on 2026-07-13):
+**Message template** (required verbatim for `source: "gmail"` proposals): originally used "מאשר"/"דוחה" (confirmed working end-to-end 2026-07-13), unified to "כן"/"לא" on 2026-07-15 to match the native WhatsApp-detected proposals' wording — both response words are still accepted (see "User Response Processing" below).
 ```
 🤖 *הודעה אוטומטית מסוכן המיילים*
 
@@ -62,8 +62,8 @@ Do not disqualify a message just because it reads as promotional or commercial (
 🔗 *לינק למייל:* <gmail_link>
 
 ---
-💡 *להרשמה ביומן:* הגב *'מאשר'*
-❌ *להתעלמות/מחיקה:* הגב *'דוחה'*
+💡 *להרשמה ביומן:* הגב *'כן'*
+❌ *להתעלמות/מחיקה:* הגב *'לא'*
 ```
 
 **Idempotency marker**: immediately after a `source: "gmail"` proposal is successfully sent via `POST /api/sendText` (in "Quiet Hours & Notification Dispatch" below), apply the Gmail label `Ami/Event-Notified-WhatsApp` to that thread, in the same step as saving `notification_message_id`. Never apply this label before a send actually succeeds — a failed send must be retried on the next run, not silently treated as sent.
@@ -144,8 +144,8 @@ During the polling phase, when scanning messages from the **self-chat**:
 * Look for messages that are replies to a proposal (using `replyTo.id`).
 * Match the `replyTo.id` against the `notification_message_id` of items in `pending_events` with status `awaiting_response`.
 * Parse the user's reply text:
-  * **Approved** (e.g., "כן", "yes", "אשר", "יאללה", 👍): Before creating anything, run a final `list_events` check over the event's time range (`fullText` search on the title; for `source: "gmail"` entries, search for the `gmail_link`/thread ID instead, since it will appear verbatim in that event's description) to confirm it wasn't already created by another run or the other channel. If it already exists, skip creation, remove the event from `pending_events`, and queue a `duplicate` notification. Otherwise call Google Calendar API `insert_event` to create the event. Send a success confirmation back to the self-chat, remove the event from `pending_events`, and queue a `created` notification. For `source: "gmail"` entries, follow the additional cross-channel handoff in "Gmail-Sourced Proposals" (re-check `Ami/Event-Pending` is still present before creating, then swap it for `Ami/Event-Created`).
-  * **Rejected** (e.g., "לא", "no", "ביטול", "אל תוסיף", 👎): Update status to `rejected`, clean it up from `pending_events`, and optionally acknowledge. For `source: "gmail"` entries, also remove `Ami/Event-Pending` from the Gmail thread (see "Gmail-Sourced Proposals").
+  * **Approved** (e.g., "כן", "yes", "אשר", "מאשר", "יאללה", 👍 — "מאשר" kept as a synonym since it was the wording used in the Gmail-sourced template before this was unified to "כן"/"לא"): Before creating anything, run a final `list_events` check over the event's time range (`fullText` search on the title; for `source: "gmail"` entries, search for the `gmail_link`/thread ID instead, since it will appear verbatim in that event's description) to confirm it wasn't already created by another run or the other channel. If it already exists, skip creation, remove the event from `pending_events`, and queue a `duplicate` notification. Otherwise call Google Calendar API `insert_event` to create the event. Send a success confirmation back to the self-chat, remove the event from `pending_events`, and queue a `created` notification. For `source: "gmail"` entries, follow the additional cross-channel handoff in "Gmail-Sourced Proposals" (re-check `Ami/Event-Pending` is still present before creating, then swap it for `Ami/Event-Created`).
+  * **Rejected** (e.g., "לא", "no", "דוחה", "ביטול", "אל תוסיף", 👎 — "דוחה" kept as a synonym for the same reason as "מאשר" above): Update status to `rejected`, clean it up from `pending_events`, and optionally acknowledge. For `source: "gmail"` entries, also remove `Ami/Event-Pending` from the Gmail thread (see "Gmail-Sourced Proposals").
   * **Modified** (e.g., "תשנה ל-18:00", "change to 6pm"): Extract the new parameters, update the draft in `pending_events`, check conflicts again, and send an updated proposal.
 
 ## Duplicate Issue Reporting Prevention
