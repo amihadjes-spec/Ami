@@ -36,6 +36,36 @@ function chatIdOf(chat) {
   return typeof chat.id === 'string' ? chat.id : chat.id?._serialized;
 }
 
+function isGroupId(chatId) {
+  return typeof chatId === 'string' && chatId.endsWith('@g.us');
+}
+
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// GET /chats returns no `name`/`isGroup` fields under the NOWEB engine (only
+// under WEBJS). /chats/overview includes `name` (populated as WAHA's
+// background history sync catches up — it can be null right after a fresh
+// connect) but never an `isGroup` field on any engine; isGroup is derived
+// from the chatId suffix instead (`@g.us` = group).
+async function fetchChatsOverview() {
+  // The overview list fills in gradually while WAHA's NOWEB store finishes
+  // its background sync, so a request made moments after the session
+  // connects can return far fewer chats than actually exist. One short
+  // retry is enough to let a burst of in-flight sync settle without turning
+  // this into an open-ended wait — if it's still small after that, proceed
+  // with whatever's there rather than blocking the run.
+  const MIN_EXPECTED_CHATS = 10;
+  const RETRY_DELAY_MS = 5000;
+  let chats = await getJson(`/api/${WAHA_SESSION}/chats/overview`);
+  if (chats.length < MIN_EXPECTED_CHATS) {
+    await sleep(RETRY_DELAY_MS);
+    chats = await getJson(`/api/${WAHA_SESSION}/chats/overview`);
+  }
+  return chats;
+}
+
 async function fetchChatMessagesSince(chatId, gte) {
   const messages = [];
   for (let page = 0; page < MAX_PAGES_PER_CHAT; page++) {
@@ -63,18 +93,37 @@ async function main() {
     return;
   }
 
-  const chats = await getJson(`/api/${WAHA_SESSION}/chats`);
+  const chats = await fetchChatsOverview();
 
   const candidateMessages = [];
   const updatedWatermarks = {};
   const paginationCapHits = [];
 
+  // The self-chat's ID is the account's own JID — derived directly from the
+  // authenticated session (`GET /api/sessions`), not by matching pushName
+  // against the chat list. This is robust regardless of chat-list sync
+  // state (unlike the old name-matching approach) and confirmed empirically
+  // against a live NOWEB session: `session.me.lid` resolves straight to the
+  // real self-chat history. Prefer `lid` (how self-sent messages actually
+  // address the chat) and fall back to `id`, then to the old name+isGroup
+  // heuristic only if `session.me` is unexpectedly missing both — this
+  // should not happen in practice, it's a defensive last resort only.
   const selfChatId = (() => {
+    if (session.me && session.me.lid) return session.me.lid;
+    if (session.me && session.me.id) return session.me.id;
     const pushName = session.me && session.me.pushName;
     if (!pushName) return null;
-    const self = chats.find((c) => !c.isGroup && c.name === pushName);
+    const self = chats.find((c) => !isGroupId(chatIdOf(c)) && c.name === pushName);
     return self ? chatIdOf(self) : null;
   })();
+
+  // The self-chat is where every proposal/approval reply happens, so it
+  // must always be scanned even if it hasn't synced into the (gradually
+  // filling) overview list yet — a chat-list gap here would silently drop
+  // approval replies rather than just missing a low-priority chat.
+  if (selfChatId && !chats.some((c) => chatIdOf(c) === selfChatId)) {
+    chats.push({ id: selfChatId, name: (session.me && session.me.pushName) || selfChatId });
+  }
 
   for (const chat of chats) {
     const chatId = chatIdOf(chat);
