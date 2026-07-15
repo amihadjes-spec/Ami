@@ -46,6 +46,11 @@
       "issue_key": "gmail-event-pending-no-signal:19f5f41c30248bc6",
       "first_reported_at": "2026-07-14T22:26:39+03:00",
       "description": "תוצאת Gmail עם תווית Ami/Event-Pending (thread 19f5f41c30248bc6, נושא מכתב פקיד שומה/מיטב מול אבי קפלן) אינה מכילה שום סימן לאירוע (תאריך/שעה/מיקום) - נראה כמו תיוג שגוי מצד סוכן המיילים. לא נוצרה הצעה מדומה. יש לבדוק את התיוג."
+    },
+    {
+      "issue_key": "waha-unreachable",
+      "first_reported_at": "2026-07-15T07:23:02+03:00",
+      "description": "node scripts/waha-poll.mjs נכשל (ok:false, reason:unreachable) - GET /api/default/chats החזיר HTTP 500 עם קריסת Puppeteer/Chromium בתוך מנוע WEBJS (GetChats). נבדק ישירות: GET /api/sessions מדווח session 'default' כ-WORKING, כך שהבעיה אינה בסשן עצמו אלא בקריאת רשימת הצ'אטים. נבדק פעמיים (הפרש כ-50 שניות), לא חלף מעצמו. ייתכן שנדרש איתחול קונטיינר WAHA. הפולינג של הריצה הזו דולג."
     }
   ],
   "whatsapp_watermarks": {
