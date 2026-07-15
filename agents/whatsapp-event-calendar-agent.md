@@ -138,6 +138,8 @@ To avoid buzzing the phone at night, notifications are buffered through `notify_
 * If current time is inside quiet hours: Leave items in `notify_queued`.
 * If current time is outside quiet hours: Send all queued messages to the self-chat (self-chat ID derived per "Critical fix — self-chat identification under NOWEB", then `POST /api/{session}/sendText`).
 * For each successfully sent proposal, update its status in `pending_events` to `awaiting_response` and store the sent message's ID in `notification_message_id`. This ID is critical for matching future replies. For `source: "gmail"` entries specifically, also apply the `Ami/Event-Notified-WhatsApp` label to the Gmail thread at this point (see "Gmail-Sourced Proposals") — only after the send actually succeeds.
+* **Two delivery channels, by `kind`**: `proposal` (needs a reply) goes out as a real WhatsApp message via `POST /api/sendText`, exactly as above — it's the only way to later capture a `replyTo.id`. Every other kind (`created | modified | rejected | duplicate | error | run_summary`) goes via `ntfy` instead (`node scripts/ntfy-notify.mjs --title ... --message ...`, topic from `NTFY_TOPIC`) — these are one-way informational pushes, no reply is ever expected on them.
+* **ntfy messages must be short pointers, not content copies**: the full event details (title, time, location, conflict warning, link) already went out via the WhatsApp proposal itself — an `ntfy` message reporting on it should identify *which* proposal/result it's about (e.g. a short title + date), not restate everything. This isn't just tidiness — see "Critical fix — ntfy messages must stay short" below for a real size limit this avoids.
 
 ### 3. User Response Processing (Self-Chat)
 During the polling phase, when scanning messages from the **self-chat**:
@@ -183,6 +185,15 @@ Verified against the live session after the fix: `chatsScanned` went from 8–9 
 **The rule itself went missing from this document** in a later condensing rewrite (`37e0948`, 2026-07-14) — an accidental content loss, not a reversal of the decision. This surfaced again for real on 2026-07-15: a "לא" (no) reply was recorded against a WhatsApp-detected proposal ("הפגנה בכיכר רבין", 18/7), and the user then explicitly asked to send a "כן" (yes) as a deliberate, confirmed change of mind — at which point it became clear the current spec had no written rule at all for what a run should do on encountering both replies, since the rule had quietly disappeared along with the rest of that rewrite's cuts.
 
 **Fix**: restored the rule explicitly in "User Response Processing" above (§3) — highest-`timestamp` reply among all candidates matching the same `notification_message_id` wins; earlier ones are superseded, not separately processed or flagged as errors. Unlike 2026-07-11, this is written down as a first-class, permanent rule rather than something a stateless session has to reconstruct or lose again.
+
+## Critical fix — ntfy messages must stay short (2026-07-15)
+
+**Trigger**: the user saw an `ntfy` push notification that looked cut off ("סריקת..."). Investigated properly rather than guessing:
+- `scripts/ntfy-notify.mjs` does no truncation of its own — `body: args.message` is sent exactly as given.
+- ntfy.sh's real limit was confirmed empirically (not just from docs): a message over 4,096 bytes isn't truncated — the server silently converts it into a **file attachment** instead of an inline message. Verified by publishing an 8,276-byte test message and downloading the resulting attachment: the full content was intact (nothing lost), but the notification itself changed to a generic `"You received a file: attachment.txt"` line with none of the actual content visible until separately opened.
+- A single run's summary text measured well under the limit (~1,080 bytes, ~26%), so the specific notification the user saw was almost certainly just normal iOS notification-banner preview truncation — the full text was there all along. But **consolidated notifications** (several `notify_queued` items batched into one push, e.g. after quiet hours) stack multiple summaries together and could realistically approach or cross 4,096 bytes, at which point the notification would silently degrade into that unhelpful generic attachment line.
+
+**Decision**: rather than adding logic to measure message length and split oversized batches, the simpler fix is to keep `ntfy` messages inherently short in the first place — see the new rule in "Quiet Hours & Notification Dispatch" above (§2). Since `ntfy` is one-way and informational only, and the full content for anything proposal-related already went out over WhatsApp, there's no reason for an `ntfy` message to ever approach the byte limit at all if it's just naming what happened rather than restating it.
 
 ## Critical fix — fromMe blocks replies in the self-chat
 
