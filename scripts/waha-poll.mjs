@@ -1,9 +1,18 @@
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 
 const WAHA_URL = process.env.WAHA_URL || 'http://localhost:3000';
 const WAHA_API_KEY = process.env.WAHA_API_KEY || '';
 const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
 const STATE_FILE = process.argv[2];
+
+// Default matches this machine's WAHA volume mount (.waha-sessions bound to
+// /app/.sessions in the container); overridable in case the volume path or
+// session name ever changes. See "getChatIdsFromNowebStore" for why this is
+// read at all.
+const WAHA_NOWEB_STORE_PATH =
+  process.env.WAHA_NOWEB_STORE_PATH ||
+  `${homedir()}/.waha-sessions/noweb/${WAHA_SESSION}/store.sqlite3`;
 
 const BACKFILL_SECONDS = 24 * 3600;
 const PAGE_SIZE = 500;
@@ -66,6 +75,69 @@ async function fetchChatsOverview() {
   return chats;
 }
 
+// WORKAROUND FOR A KNOWN WAHA BUG (2026-07-15, WAHA 2026.6.2, NOWEB engine):
+// GET /chats and GET /chats/overview both read from an in-memory cache
+// (`NowebInMemoryStore`) that never gets hydrated from the actual persisted
+// history — confirmed by direct investigation: after a full, successful
+// background sync (verified via docker logs reaching hundreds of "synced
+// chats"), those endpoints stayed stuck at single digits while
+// store.sqlite3 on disk correctly held 350+ chats. This reproduced
+// identically even when the NOWEB store config was set correctly *before*
+// the session's first-ever connection (the one config-ordering mistake
+// WAHA's own docs warn can cause exactly this kind of corruption) — so it
+// isn't a setup error on our end, it's a genuine bug in how that in-memory
+// cache gets populated. GET /chats/{chatId}/messages was separately
+// confirmed to work fine for chat IDs missing from the broken list
+// endpoints, so only chat *enumeration* is affected, not per-chat message
+// fetching.
+//
+// This reads the chat ID list directly from WAHA's own NOWEB persistent
+// store (a SQLite file on the same volume WAHA itself writes to,
+// .waha-sessions/noweb/{session}/store.sqlite3 — read-only here, WAHA is
+// the only writer) instead of trusting the broken API endpoints for
+// enumeration. If this ever breaks — wrong path, missing file, schema
+// change in a future WAHA version — it fails soft and the caller falls
+// back to the (known-broken-right-now, but self-healing if WAHA ever fixes
+// it) `fetchChatsOverview()` path rather than crashing the whole run.
+async function getChatIdsFromNowebStore() {
+  try {
+    const { DatabaseSync } = await import('node:sqlite');
+    const db = new DatabaseSync(WAHA_NOWEB_STORE_PATH, { readOnly: true });
+    try {
+      const rows = db.prepare('SELECT id FROM chats').all();
+      const ids = rows.map((r) => r.id).filter((id) => typeof id === 'string' && id.length > 0);
+      return ids.length > 0 ? ids : null;
+    } finally {
+      db.close();
+    }
+  } catch {
+    // Missing node:sqlite (older Node), missing/locked file, schema drift
+    // in a future WAHA version, or any other read failure — all treated
+    // the same: this is a best-effort optimization, not a hard dependency.
+    return null;
+  }
+}
+
+// Builds the chat list to poll: prefers the full, accurate ID list from
+// WAHA's own persisted store (see getChatIdsFromNowebStore) and layers in
+// whatever `name` values the (partially broken but not entirely useless)
+// overview API has managed to resolve, falling back to the chat ID itself
+// per-chat exactly as before when a name isn't available. If the store
+// read fails outright, falls back fully to the pre-existing overview-only
+// behavior.
+async function fetchChatsToScan() {
+  const overviewChats = await fetchChatsOverview();
+  const storeIds = await getChatIdsFromNowebStore();
+  if (!storeIds) return overviewChats;
+
+  const nameById = new Map();
+  for (const c of overviewChats) {
+    const id = chatIdOf(c);
+    if (id && c.name) nameById.set(id, c.name);
+  }
+  return storeIds.map((id) => ({ id, name: nameById.get(id) || null }));
+}
+
 async function fetchChatMessagesSince(chatId, gte) {
   const messages = [];
   for (let page = 0; page < MAX_PAGES_PER_CHAT; page++) {
@@ -93,7 +165,7 @@ async function main() {
     return;
   }
 
-  const chats = await fetchChatsOverview();
+  const chats = await fetchChatsToScan();
 
   const candidateMessages = [];
   const updatedWatermarks = {};
