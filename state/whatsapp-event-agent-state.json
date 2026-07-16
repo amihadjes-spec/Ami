@@ -17,6 +17,24 @@
       },
       "has_conflict": true,
       "status": "awaiting_response"
+    },
+    {
+      "id": "dem-beersheva-2026-07-17",
+      "chat_id": "120363404393420920@g.us",
+      "chat_name": "הדמוקרטים בלהבים",
+      "source_message_id": "false_120363404393420920@g.us_3AD3F8E98F56293128F3_136966624522253@lid",
+      "notification_message_id": "3EB01D88887CCFDB3F31AA",
+      "source": "whatsapp",
+      "detected_at": "2026-07-16T16:29:31.945Z",
+      "event": {
+        "title": "דוכן מפלגת הדמוקרטים - באר שבע (הגרנד קניון)",
+        "start": "2026-07-17T10:00:00+03:00",
+        "end": "2026-07-17T12:00:00+03:00",
+        "location": "הגרנד קניון, באר שבע, הצד המערבי",
+        "timezone": "Asia/Jerusalem"
+      },
+      "has_conflict": true,
+      "status": "awaiting_response"
     }
   ],
   "notify_queued": [],
