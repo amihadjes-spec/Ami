@@ -36,16 +36,21 @@ For each extracted message, check for signals of a concrete event: date and/or t
 
 For each detected event, extract: title, start/end (default duration of one hour if no end time given), location (if any), timezone (default `Asia/Jerusalem`). Check for conflicts against the primary calendar (`list_events` over the event's time range) and flag overlaps. Always pass `singleEvents=True` and `orderBy='startTime'` on every `list_events` call, to correctly expand recurring events.
 
+**Date-only candidates (no extractable time)**: some messages give a clear date (or several) with no clock time anywhere in the readable text — e.g. a multi-item community events roundup that points to an external page for exact times. Don't drop these silently just because there's no time to extract. Propose them as an **all-day placeholder** instead of a timed event: set `event.all_day: true` and `event.date` (a bare `YYYY-MM-DD`, no `start`/`end`), and include a note in the proposal and the eventual calendar description marking it explicitly as `"שעה טרם ידועה — יעודכן בהמשך"` so both Ami and later runs can tell it's a placeholder awaiting a real time, not a confirmed detail. Everything else about detection (title, location, dedup) applies to a date-only candidate exactly as it does to a timed one — a single message can and should yield **multiple separate date-only candidates** if it lists multiple distinct dated items, one per item, not one merged entry (see "Known gap this closes (2026-07-16, part 2)" below).
+
 **Deduplication against pending proposals**: before adding a new suggestion to `pending_events`, check whether an identical one already exists (same `chat_id`, similar title/time). If so, don't add a duplicate; if the new message adds/refines details (e.g., a time that was previously unknown), update the existing suggestion instead of creating a new one.
 
 **Deduplication against events already on the calendar**: matching a candidate to an existing calendar event by title and date alone is not sufficient grounds to silently drop it — title/date similarity only tells you it's *probably the same occasion*, not that every detail already agrees. Before treating a candidate as "already represented, no action needed":
 * Compare the candidate's full extracted details (start/end time, location) against the existing event's — not just the title/date.
 * If the time range and location both match (or the candidate adds no new information), skip silently, as before.
-* If the candidate's time range disagrees with the existing event (e.g. a longer or shorter duration than what's currently on the calendar), don't stay silent — propose it as a **correction** to the existing event via the normal Approval Flow (`kind: modified`).
+* If the candidate's time range disagrees with the existing event (e.g. a longer or shorter duration than what's currently on the calendar), don't stay silent — this is a **correction candidate**, not a duplicate and not a fresh event. Send it as a real WhatsApp proposal (`kind: proposal`, reply required — correcting something already on the calendar still needs explicit approval, same as creating one, per "Core Principles"). Only after approval, apply it with `update_event` against the *existing* event's ID (never `create_event` — this must not produce a second event) and then report the outcome with a one-way `kind: modified` notification. A correction-type `pending_events` entry therefore needs `action: "update"` and `target_event_id` set to the existing event's ID (see "State Storage"), instead of the implicit `action: "create"` a normal new-event proposal has.
+* **Upgrading an all-day placeholder is a correction, not a new event**: if the existing calendar event is itself an all-day placeholder (`all_day: true`, created via the "Date-only candidates" rule above) and a new candidate for the same title/date now carries a real time, that's the expected follow-up this feature exists for. Handle it exactly like any other correction candidate above — propose (`kind: proposal`) → on approval, `update_event` sets real `start`/`end`, clears `all_day`, and drops the "שעה טרם ידועה" note → report `kind: modified`. Never treat the arrival of a time as grounds for a brand-new, second event alongside the placeholder.
 * If the candidate describes a genuinely different location or slot under the same or a similar title (e.g. two separate staffing shifts for the same campaign at two different sites), treat it as a **separate, additional candidate** — same title does not mean same event when the location differs.
 * Never let a partial title/date match justify silence when the underlying time or place data actually disagrees — surface the discrepancy instead of assuming the existing record is authoritative.
 
 **Known gap this closes (2026-07-16)**: a Democrats-party volunteer call-out for two staffing shifts (Beer Sheva הגרנד קניון and Lahavim מול הסופר, both 17.7 10:00-12:00) was matched purely on title+date against an existing "דוכן מפלגת הדמוקרטים" calendar event (created via the Gmail bridge: 17.7 10:00-**11:00**, Lahavim only) and silently dropped — even though the end time was wrong (11:00 vs. the broadcast's 12:00) and the Beer Sheva shift wasn't on the calendar at all. This section's rules are what should have caught both discrepancies instead of treating the whole broadcast as already handled.
+
+**Known gap this closes (2026-07-16, part 2)**: a Lahavim municipal summer-events roundup message (three items: שבת בפארק 18.7, פותחים את הזוליתא + a same-evening World Cup screening mention 19.7, סרט על הדשא 21.7) was correctly recognized as containing three distinct dated items, but none had a clock time in the text, and the spec had no rule for that case — so all three were silently dropped instead of proposed as placeholders. Separately, prior to this fix there was also no rule for what should happen when a later message supplies the missing time for such a placeholder — that gap is what the "Upgrading an all-day placeholder" bullet above closes.
 
 Do not disqualify a message just because it reads as promotional or commercial (e.g. a price, a phone number for registration, a sign-up form link, phrasing like "quick sign-up" or "limited spots"). All monitored groups are ones the user has explicitly opted into, so a group activity/workshop/course/trip announcement with a concrete date, time, and location (e.g. a guided off-road driving session, a group hike, a paid class) is just as valid a candidate as a personal invite — evaluate purely on whether date/time/location signals are present, not on whether the message "sounds like an ad." When extracting the title for such messages, use the core activity/headline (e.g. "הדרכת נהיגת שטח קבוצתית — יער בן שמן"), not the full marketing copy.
 
@@ -101,12 +106,16 @@ This agent never reads or acts on a *Gmail-side* reply — that stays the email 
       "gmail_thread_id": "Gmail thread/message ID — present only when source is gmail",
       "gmail_link": "https://mail.google.com/mail/u/0/#inbox/<gmail_thread_id> — present only when source is gmail",
       "detected_at": "2026-07-06T10:00:00+03:00",
+      "action": "create | update (default create if omitted)",
+      "target_event_id": "existing calendar event ID — present only when action is update (a correction, incl. an all-day-placeholder time upgrade); update_event is used instead of create_event on approval",
       "event": {
         "title": "...",
         "start": "2026-07-10T18:00:00+03:00",
         "end": "2026-07-10T19:00:00+03:00",
         "location": "...",
-        "timezone": "Asia/Jerusalem"
+        "timezone": "Asia/Jerusalem",
+        "all_day": "true — only present on a date-only placeholder; mutually exclusive with start/end, which are replaced by a bare `date` (YYYY-MM-DD) instead",
+        "date": "2026-07-10 — present only when all_day is true"
       },
       "has_conflict": false,
       "status": "awaiting_notify | notified | awaiting_response"
