@@ -1,24 +1,6 @@
 {
   "pending_events": [
     {
-      "id": "wc-lahavim-pub-2026-07-19",
-      "chat_id": "120363310960312631@g.us",
-      "chat_name": "הודעות קהילה פנאי ותרבות להבים",
-      "source_message_id": "false_120363310960312631@g.us_3EB0560EB6967E6003450B_42528917176337@lid",
-      "notification_message_id": "3EB0437648B0B1F240C7B6",
-      "source": "whatsapp",
-      "detected_at": "2026-07-16T16:27:00+03:00",
-      "event": {
-        "title": "גמר המונדיאל - צפייה בפאב החברתי להבים",
-        "start": "2026-07-19T22:00:00+03:00",
-        "end": "2026-07-19T23:00:00+03:00",
-        "location": "הפאב החברתי להבים",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": true,
-      "status": "awaiting_response"
-    },
-    {
       "id": "lahavim-shabat-park-2026-07-18",
       "chat_id": "972535330280-1603199679@g.us",
       "chat_name": "הודעות מועצת להבים",
