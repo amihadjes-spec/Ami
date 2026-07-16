@@ -17,6 +17,60 @@
       },
       "has_conflict": true,
       "status": "awaiting_response"
+    },
+    {
+      "id": "lahavim-shabat-park-2026-07-18",
+      "chat_id": "972535330280-1603199679@g.us",
+      "chat_name": "הודעות מועצת להבים",
+      "source_message_id": "false_972535330280-1603199679@g.us_3A0E03356F8B465C7297_179710038413326@lid",
+      "notification_message_id": "3EB05593A2D735BB43CB8F",
+      "source": "whatsapp",
+      "detected_at": "2026-07-16T18:20:25.347Z",
+      "event": {
+        "title": "שבת בפארק - יצירה לילדים ומופע בעלי חיים",
+        "all_day": true,
+        "date": "2026-07-18",
+        "location": "פארק הציפורים, להבים",
+        "timezone": "Asia/Jerusalem"
+      },
+      "has_conflict": false,
+      "status": "awaiting_response"
+    },
+    {
+      "id": "lahavim-zulita-2026-07-19",
+      "chat_id": "972535330280-1603199679@g.us",
+      "chat_name": "הודעות מועצת להבים",
+      "source_message_id": "false_972535330280-1603199679@g.us_3A0E03356F8B465C7297_179710038413326@lid",
+      "notification_message_id": "3EB0394A6627F3B5286320",
+      "source": "whatsapp",
+      "detected_at": "2026-07-16T18:20:25.347Z",
+      "event": {
+        "title": "פותחים את הזוליתא - מתחם קיץ חדש בלהבים",
+        "all_day": true,
+        "date": "2026-07-19",
+        "location": "להבים",
+        "timezone": "Asia/Jerusalem"
+      },
+      "has_conflict": false,
+      "status": "awaiting_response"
+    },
+    {
+      "id": "lahavim-seret-deshe-2026-07-21",
+      "chat_id": "972535330280-1603199679@g.us",
+      "chat_name": "הודעות מועצת להבים",
+      "source_message_id": "false_972535330280-1603199679@g.us_3A0E03356F8B465C7297_179710038413326@lid",
+      "notification_message_id": "3EB09560B98E69BDD40CB9",
+      "source": "whatsapp",
+      "detected_at": "2026-07-16T18:20:25.347Z",
+      "event": {
+        "title": "סרט על הדשא - הקרנת \"לילו וסטיץ׳\"",
+        "all_day": true,
+        "date": "2026-07-21",
+        "location": "רחבת המתנ\"ס, להבים",
+        "timezone": "Asia/Jerusalem"
+      },
+      "has_conflict": false,
+      "status": "awaiting_response"
     }
   ],
   "notify_queued": [],
