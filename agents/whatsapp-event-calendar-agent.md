@@ -1,4 +1,4 @@
-﻿# Agent: WhatsApp Event Detection + Calendar-Add Suggestion
+# Agent: WhatsApp Event Detection + Calendar-Add Suggestion
 
 ## Purpose
 
@@ -135,6 +135,7 @@ When a candidate event is detected:
 ### 2. Quiet Hours & Notification Dispatch
 To avoid buzzing the phone at night, notifications are buffered through `notify_queued` and dispatched based on local time (`Asia/Jerusalem`):
 * **Quiet Hours**: 22:00 to 08:00.
+* **Scheduled run itself is also skipped in this window**: `run-whatsapp-agent.ps1` checks the local Israel time before doing anything else (before `docker start`, `git pull`, or invoking `claude -p`) and exits immediately if inside 22:00–08:00, logging a "Skipped: quiet hours" line. This is separate from and in addition to the notification buffering described above — it avoids spinning up Docker/git/the agent process at all during quiet hours, not just delaying message delivery.
 * If current time is inside quiet hours: Leave items in `notify_queued`.
 * If current time is outside quiet hours: Send all queued messages to the self-chat (self-chat ID derived per "Critical fix — self-chat identification under NOWEB", then `POST /api/{session}/sendText`).
 * For each successfully sent proposal, update its status in `pending_events` to `awaiting_response` and store the sent message's ID in `notification_message_id`. This ID is critical for matching future replies. For `source: "gmail"` entries specifically, also apply the `Ami/Event-Notified-WhatsApp` label to the Gmail thread at this point (see "Gmail-Sourced Proposals") — only after the send actually succeeds.
