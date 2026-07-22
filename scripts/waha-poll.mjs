@@ -28,6 +28,23 @@ function loadWatermarks(path) {
   }
 }
 
+// Tracks the agent's own previously-sent proposal message IDs (from
+// pending_events[].notification_message_id), so a fromMe self-chat message
+// can be told apart from a fresh message the user typed/pasted directly.
+// See "Critical fix — fromMe blocks replies in the self-chat" (condition b).
+function loadSentNotificationIds(path) {
+  if (!path) return new Set();
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    const ids = (raw.pending_events || [])
+      .map((e) => e.notification_message_id)
+      .filter((id) => typeof id === 'string' && id.length > 0);
+    return new Set(ids);
+  } catch {
+    return new Set();
+  }
+}
+
 async function getJson(path, params) {
   const url = new URL(WAHA_URL + path);
   if (params) {
@@ -157,6 +174,7 @@ async function fetchChatMessagesSince(chatId, gte) {
 async function main() {
   const now = Math.floor(Date.now() / 1000);
   const watermarks = loadWatermarks(STATE_FILE);
+  const sentNotificationIds = loadSentNotificationIds(STATE_FILE);
 
   const sessions = await getJson('/api/sessions');
   const session = sessions.find((s) => s.name === WAHA_SESSION);
@@ -212,9 +230,22 @@ async function main() {
     }
     if (cappedOut) paginationCapHits.push(chatId);
 
+    const isSelfChat = chatId === selfChatId;
+    let maxTs = 0;
     for (const m of messages) {
-      const isSelfChatReply = chatId === selfChatId && m.fromMe && m.replyTo && m.replyTo.id;
-      if (m.fromMe && !isSelfChatReply) continue;
+      if (typeof m.timestamp === 'number' && m.timestamp > maxTs) maxTs = m.timestamp;
+
+      if (m.fromMe) {
+        if (!isSelfChat) continue;
+        const hasReply = !!(m.replyTo && m.replyTo.id);
+        const isKnownOutgoing = sentNotificationIds.has(m.id);
+        // Discard only the agent's own previously-sent proposals (no reply,
+        // already tracked). Keep genuine approval/rejection replies (a) and
+        // fresh user-authored messages typed/pasted straight into the
+        // self-chat (b) — see "Critical fix — fromMe blocks replies in the
+        // self-chat".
+        if (!hasReply && isKnownOutgoing) continue;
+      }
       if (!m.body || !m.body.trim()) continue;
       candidateMessages.push({
         chatId,
@@ -229,7 +260,18 @@ async function main() {
       });
     }
 
-    updatedWatermarks[chatId] = now;
+    // See "Critical fix — watermark must not jump to 'now' on an empty delta
+    // fetch": only a genuinely empty *initial backfill* (no prior watermark)
+    // may fast-forward to `now`. A regular delta fetch that finds nothing
+    // leaves the watermark untouched so a transient miss gets retried next
+    // run instead of being silently skipped forever.
+    if (messages.length && maxTs > 0) {
+      updatedWatermarks[chatId] = maxTs;
+    } else if (!watermark) {
+      updatedWatermarks[chatId] = now;
+    } else {
+      updatedWatermarks[chatId] = watermark;
+    }
   }
 
   console.log(JSON.stringify({
