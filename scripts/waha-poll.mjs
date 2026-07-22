@@ -193,25 +193,32 @@ async function main() {
   // authenticated session (`GET /api/sessions`), not by matching pushName
   // against the chat list. This is robust regardless of chat-list sync
   // state (unlike the old name-matching approach) and confirmed empirically
-  // against a live NOWEB session: `session.me.lid` resolves straight to the
-  // real self-chat history. Prefer `lid` (how self-sent messages actually
-  // address the chat) and fall back to `id`, then to the old name+isGroup
-  // heuristic only if `session.me` is unexpectedly missing both — this
-  // should not happen in practice, it's a defensive last resort only.
-  const selfChatId = (() => {
-    if (session.me && session.me.lid) return session.me.lid;
-    if (session.me && session.me.id) return session.me.id;
-    const pushName = session.me && session.me.pushName;
-    if (!pushName) return null;
-    const self = chats.find((c) => !isGroupId(chatIdOf(c)) && c.name === pushName);
-    return self ? chatIdOf(self) : null;
+  // // Fixed 2026-07-22: `session.me.id` (phone-based, e.g. ...@c.us) and
+  // `session.me.lid` (WhatsApp's newer linked-device identifier) are two
+  // DIFFERENT namespaces for the same account. Incoming self-chat messages
+  // from WAHA arrive tagged with the phone-based id, not the lid — so
+  // preferring `lid` alone caused every real self-chat message to fail the
+  // `chatId === selfChatId` check below and be silently dropped as "not the
+  // self-chat". We now match against BOTH identifiers.
+  const selfChatIds = (() => {
+    const ids = new Set();
+    if (session.me && session.me.id) ids.add(session.me.id);
+    if (session.me && session.me.lid) ids.add(session.me.lid);
+    if (ids.size === 0) {
+      const pushName = session.me && session.me.pushName;
+      if (pushName) {
+        const self = chats.find((c) => !isGroupId(chatIdOf(c)) && c.name === pushName);
+        if (self) ids.add(chatIdOf(self));
+      }
+    }
+    return ids;
   })();
-
+  const selfChatId = selfChatIds.size > 0 ? [...selfChatIds][0] : null;
   // The self-chat is where every proposal/approval reply happens, so it
   // must always be scanned even if it hasn't synced into the (gradually
   // filling) overview list yet — a chat-list gap here would silently drop
   // approval replies rather than just missing a low-priority chat.
-  if (selfChatId && !chats.some((c) => chatIdOf(c) === selfChatId)) {
+ if (selfChatId && !chats.some((c) => selfChatIds.has(chatIdOf(c)))) {
     chats.push({ id: selfChatId, name: (session.me && session.me.pushName) || selfChatId });
   }
 
@@ -230,7 +237,7 @@ async function main() {
     }
     if (cappedOut) paginationCapHits.push(chatId);
 
-    const isSelfChat = chatId === selfChatId;
+    const isSelfChat = selfChatIds.has(chatId);
     let maxTs = 0;
     for (const m of messages) {
       if (typeof m.timestamp === 'number' && m.timestamp > maxTs) maxTs = m.timestamp;
