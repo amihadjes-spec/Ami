@@ -219,8 +219,11 @@ Verified against the live session after the fix: `chatsScanned` went from 8–9 
 
 ## Critical fix — fromMe blocks replies in the self-chat
 
-By default, WAHA polling filters out `fromMe == true` to avoid processing the agent's own messages. However, in the self-chat, **every message sent by the user from their phone also has `fromMe == true`**.
-* **Rule**: When scanning the self-chat, do NOT discard messages where `fromMe == true` if they contain a valid `replyTo.id` pointing to an active proposal. These are treated as genuine user approvals.
+By default, WAHA polling filters out `fromMe == true` to avoid processing the agent's own messages. However, in the self-chat, **every message sent by the user from their phone also has `fromMe == true`.** The self-chat is also the only channel through which the *user* can hand the agent a brand-new event candidate directly (rather than it being found in a group), so it needs to support two distinct cases, not just one.
+
+**Rule**: When scanning the self-chat, do NOT discard a message where `fromMe == true` if either: (a) it has a valid `replyTo.id` pointing to an active proposal — treated as a genuine user approval/rejection reply, as before; or (b) its WAHA message id is **not** found among the `notification_message_id`s the agent itself has sent (tracked in state) — treated as a fresh, user-authored message (e.g. an event pasted or typed directly into the self-chat) and run through normal event classification exactly like a message from any other chat. Only discard a self-chat `fromMe == true` message when it matches neither condition — i.e. when it *is* one of the agent's own previously-sent outgoing messages, which would otherwise be re-processed as a new candidate every run.
+
+*(Fixed 2026-07-22: the original rule only kept condition (a), so any message the user typed or pasted fresh into the self-chat — not as a reply to an existing proposal — had no `replyTo.id` and was silently discarded before ever reaching event classification. Confirmed via a real case: an appointment-reminder text pasted into the self-chat was never picked up. Don't revert to "keep only if replyTo.id is valid" — that reintroduces this gap.)*
 
 ## Critical fix — watermark must not jump to "now" on an empty delta fetch (2026-07-16)
 
