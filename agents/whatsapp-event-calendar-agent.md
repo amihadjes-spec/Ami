@@ -1,3 +1,5 @@
+<!-- Source of truth. Copy verbatim into the routine's config after any edit. -->
+
 # Agent: WhatsApp Event Detection + Calendar-Add Suggestion
 
 ## Purpose

@@ -1,3 +1,5 @@
+<!-- Source of truth. Copy verbatim into the routine's config after any edit. -->
+
 # Agent: Email Event Detection + Calendar Proposal
 
 ## Purpose
