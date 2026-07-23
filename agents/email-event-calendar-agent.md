@@ -8,6 +8,9 @@ Since Gmail MCP tools lack an active "new email arrived" webhook, the trigger is
 
 Each execution creates a clean, stateless session. All persistent state is tracked directly via Gmail labels rather than session memory.
 
+### Execution Instruction (read this, then act — do not just restate the protocol)
+This document is the full spec, not a status report. On every run: actually call the Gmail tools per "Execution Workflow" below — search threads, read content, apply labels — and only report back which threads were checked/suggested/pending and why. Do not respond with a description or restatement of this protocol instead of performing it; a response that just echoes these instructions back means the tools were never called and the run accomplished nothing.
+
 ## State Management & Duplicate Prevention
 The agent manages state using four dedicated Gmail labels (automatically created on the first run if missing):
 
