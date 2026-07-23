@@ -13,6 +13,8 @@ Each execution creates a clean, stateless session. All persistent state is track
 ### Execution Instruction (read this, then act — do not just restate the protocol)
 This document is the full spec, not a status report. On every run: actually call the Gmail tools per "Execution Workflow" below — search threads, read content, apply labels — and only report back which threads were checked/suggested/pending and why. Do not respond with a description or restatement of this protocol instead of performing it; a response that just echoes these instructions back means the tools were never called and the run accomplished nothing.
 
+Never ask the user a clarifying question mid-run — there is no one present to answer it, and the run will hang indefinitely waiting for a reply that never comes (this has happened before and required manually opening each stuck run to answer it). If uncertain whether an item qualifies as an event, reminder, or renewal, skip it (leave it unlabeled) rather than pausing for input, and note the ambiguity in your final summary instead. Always finish the run to completion — success, partial success, or a clean "nothing to do" exit — never a pending question.
+
 ## State Management & Duplicate Prevention
 The agent manages state using five dedicated Gmail labels (automatically created on the first run if missing):
 
