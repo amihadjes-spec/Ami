@@ -12,7 +12,7 @@ Each execution creates a clean, stateless session. All persistent state is track
 This document is the full spec, not a status report. On every run: actually call the Gmail tools per "Execution Workflow" below — search threads, read content, apply labels — and only report back which threads were checked/suggested/pending and why. Do not respond with a description or restatement of this protocol instead of performing it; a response that just echoes these instructions back means the tools were never called and the run accomplished nothing.
 
 ## State Management & Duplicate Prevention
-The agent manages state using four dedicated Gmail labels (automatically created on the first run if missing):
+The agent manages state using five dedicated Gmail labels (automatically created on the first run if missing):
 
 * `Ami/Event-Checked`: Thread has been processed (whether an event was found or not).
 * `Ami/Event-Suggested`: An event was detected and proposed to the user.
@@ -22,8 +22,12 @@ The agent manages state using four dedicated Gmail labels (automatically created
 
 ## Execution Workflow (Each Run)
 1. **Verify Labels:** Ensure `Ami/Event-Checked` and `Ami/Event-Suggested` exist (`list_labels` / `create_label`).
-2. **Fetch New Emails:** Query `search_threads` for `in:inbox -label:Ami/Event-Checked` (up to 50 per run). If empty, exit silently.
-3. **Analyze & Process:** Fetch full content (`get_thread`, FULL_CONTENT) per thread. Look for explicit dates/times (invitations, confirmations, Zoom/Meet links, `.ics` files). Ignore newsletters, generic ads, or dateless receipts.
+2. **Fetch New Emails:** Query `search_threads` for `-label:Ami/Event-Checked -in:draft {-in:sent to:ami.hadjes@gmail.com}` (up to 50 per run). If empty, exit silently.
+   > **Do NOT scope to `in:inbox`.** Most incoming mail for this account is filtered straight past the inbox into labeled folders (per-sender filters with "Skip Inbox"), so an inbox-scoped query silently returns 0 even when new mail is arriving. The query above searches the whole mailbox and excludes outgoing mail sent to other people, but still includes self-sent reminder emails (`to:ami.hadjes@gmail.com`), since the user sometimes emails himself reminders.
+3. **Analyze & Process:** Fetch full content (`get_thread`, FULL_CONTENT) per thread. Look for explicit dates/times (invitations, confirmations, Zoom/Meet links, `.ics` files). Ignore newsletters, generic ads, or dateless receipts. Three categories count as a valid, proposable item:
+   * **Calendar Events:** Specific invitations, tickets, meetings, or Zoom/Meet links with explicit dates/times.
+   * **Reminders/Tasks:** Action items, follow-ups, deadlines, or explicit requests to remember/do something ("remind me", "action required", "תזכורת", "לטיפולך") that belong in the calendar or task log. Ignore newsletters/ads.
+   * **Renewals (insurance/subscriptions/licenses):** Emails confirming a periodic renewal (e.g., "ממשיכים יחד לעוד שנה", policy/subscription renewal confirmations) even with no explicit future deadline stated — treat as a Reminder/Task. Infer the follow-up date as (email date + 1 year − 2 weeks), so there's time to review or shop around before the next renewal.
    * **A date/time must come from readable message text, not inference.** Only extract an event from the plaintext/HTML body actually returned by `get_thread`/`get_message`. Never infer, guess, or hallucinate a date/time from context clues such as a sender's job title, department name, organizational boilerplate, or the mere presence of an attachment (PDF, image, `.docx`) whose content is not itself returned as readable text. If the substantive content is locked inside an attachment the tool doesn't surface as text, treat the thread as dateless — do not propose an event based on the surrounding email alone.
    * **Bureaucratic/administrative terminology is not scheduling.** Hebrew words like תיאום/לתאם/מתאם ("coordination") routinely appear in government, tax authority, insurance, or institutional correspondence as an organizational term (e.g. "מדור תיאומי מס" — a tax coordination department) or general-purpose "let's coordinate next steps" language, with no actual appointment attached. Do not treat these as event signals unless they're immediately paired with a concrete date and time in the same readable text (e.g. "נא לתאם פגישה ביום ג' 20.7 בשעה 10:00").
    * **Known false-positive pattern (2026-07-14):** a tax authority thread (רות יעקוביאן, `taxes.gov.il`, subject re: פקיד שומה) was wrongly flagged `Event-Pending` — the only visible text was a signature block ("מנהלת מדור תיאומי והחזרי מס"), with the actual letter content in a PDF attachment never read. This is exactly the pattern the two rules above are meant to prevent.
