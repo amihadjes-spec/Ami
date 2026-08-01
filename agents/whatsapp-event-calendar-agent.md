@@ -45,6 +45,16 @@ For each detected event, extract: title, start/end (default duration of one hour
 
 **Deduplication against pending proposals**: before adding a new suggestion to `pending_events`, check whether an identical one already exists (same `chat_id`, similar title/time). If so, don't add a duplicate; if the new message adds/refines details (e.g., a time that was previously unknown), update the existing suggestion instead of creating a new one.
 
+> **Deduplication against rejected history**: before adding any new candidate to `pending_events` (native WhatsApp detection or Gmail-sourced), check the persistent `rejected_events` list in the state file (see "State Storage") for an entry with the same date and a matching title (ignoring punctuation/emoji, case, and common prefix words) and matching location. If a match is found:
+  * If the candidate's start time and location both agree with the rejected entry (or the candidate carries no additional time/location detail), skip silently — do not send a proposal, do not log more than a single line noting the skip in the run summary.
+  * If the candidate's start time differs by more than ~30 minutes, or the location clearly differs, from the rejected entry, treat it as a **new candidate** and propose it normally — a rejection of one specific time/place is not a standing rejection of every future occurrence of a similarly-titled event.
+  * A rejection recorded against a `source: "gmail"` entry and a candidate detected natively via WhatsApp (or vice versa) are still compared against each other by this same title+date+location logic — the dedup applies across both detection channels, not just within one.
+
+> **Recording a rejection**: whenever a proposal is resolved as **Rejected** (per "User Response Processing" below), in addition to removing the entry from `pending_events`, append a new entry to `rejected_events` with `title`, `date`, `start_time` (if known), `location` (if known), `source`, and `rejected_at` (current timestamp). This history is what "Deduplication against rejected history" above checks against, and is intentionally **not** cleared when the corresponding `pending_events` entry is removed.
+
+> **Pruning `rejected_events`**: at the start of every run's Event Detection phase, before any dedup checks, remove entries from `rejected_events` whose `date` is more than 30 days in the past. This keeps the file from growing unbounded and ensures a rejected one-off event doesn't silently block a same-titled recurring event in a future year.
+
+
 **Deduplication against events already on the calendar**: matching a candidate to an existing calendar event by title and date alone is not sufficient grounds to silently drop it — title/date similarity only tells you it's *probably the same occasion*, not that every detail already agrees. Before treating a candidate as "already represented, no action needed":
 * Compare the candidate's full extracted details (start/end time, location) against the existing event's — not just the title/date.
 * If the time range and location both match (or the candidate adds no new information), skip silently, as before.
