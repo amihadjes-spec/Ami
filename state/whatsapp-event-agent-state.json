@@ -1,106 +1,9 @@
 {
-  "pending_events": [
-    {
-      "id": "wa-2026-08-05-a-mifgash-ktiva",
-      "chat_id": "120363422893729196@g.us",
-      "chat_name": "תושבי להבים - הבית של כולנו",
-      "source_message_id": "false_120363422893729196@g.us_ACEAD87F17F5A76947BB7A11CF3B5074_66597830025273@lid",
-      "notification_message_id": "true_153768486285323@lid_3EB07EA4AA6E8CA529B648_out",
-      "source": "whatsapp",
-      "detected_at": "2026-08-05T14:31:07+03:00",
-      "action": "create",
-      "event": {
-        "title": "מפגש כתיבה ביער הקהילתי",
-        "start": "2026-08-12T18:00:00+03:00",
-        "end": "2026-08-12T19:00:00+03:00",
-        "location": "ביער הקהילתי - כניסה מרח׳ ורד 92 (ליד החט\"צ)",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": true,
-      "status": "awaiting_response"
-    },
-    {
-      "id": "wa-2026-08-05-b-hamal-gag",
-      "chat_id": "120363419946766365@g.us",
-      "chat_name": "חמ\"ל בחירות - מתנדבים",
-      "source_message_id": "false_120363419946766365@g.us_3EB030EF1528427DC14852_81518647095538@lid",
-      "notification_message_id": "true_153768486285323@lid_3EB0120B664710E80ED375_out",
-      "source": "whatsapp",
-      "detected_at": "2026-08-05T14:31:07+03:00",
-      "action": "create",
-      "event": {
-        "title": "חמ\"ל על הגג #2 - ערב היכרות וקהילה",
-        "start": "2026-08-09T19:00:00+03:00",
-        "end": "2026-08-09T20:30:00+03:00",
-        "location": "הרצליה",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": false,
-      "status": "awaiting_response"
-    },
-    {
-      "id": "wa-2026-08-05-c-duchanim-location-update",
-      "chat_id": "120363428925630848@g.us",
-      "chat_name": "דוכנים יום בחירות - להבים",
-      "source_message_id": "false_120363428925630848@g.us_3EB047CEA66EED94F72157_220830122385595@lid",
-      "notification_message_id": "true_153768486285323@lid_3EB099FDA1BEF3BD6B05A2_out",
-      "source": "whatsapp",
-      "detected_at": "2026-08-05T14:31:07+03:00",
-      "action": "update",
-      "target_event_id": "eks5h62p8c8dn1tb1qb2n4unfs",
-      "event": {
-        "title": "מפגש מתנדבים - דוכני הדמוקרטים (להבים)",
-        "start": "2026-08-09T19:00:00+03:00",
-        "end": "2026-08-09T20:30:00+03:00",
-        "location": "בית משפחת שגב, רחוב טופח 9, להבים",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": false,
-      "status": "awaiting_response"
-    },
-    {
-      "id": "wa-2026-08-05-d-duchan-democrats",
-      "chat_id": "120363404393420920@g.us",
-      "chat_name": "הדמוקרטים בלהבים",
-      "source_message_id": "false_120363404393420920@g.us_AC9BBE7266E0C143E988795CD9D14F35_196567785054426@lid",
-      "notification_message_id": "true_153768486285323@lid_3EB0C1913AFE76AF738160_out",
-      "source": "whatsapp",
-      "detected_at": "2026-08-05T14:31:07+03:00",
-      "action": "create",
-      "event": {
-        "title": "דוכן הדמוקרטים בלהבים",
-        "start": "2026-08-06T16:30:00+03:00",
-        "end": "2026-08-06T18:30:00+03:00",
-        "location": "להבים",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": true,
-      "status": "awaiting_response"
-    },
-    {
-      "id": "wa-2026-08-05-e-gastroscopy-lari",
-      "chat_id": "972526031305-1627207927@g.us",
-      "chat_name": "למה להגיד כל דבר פעמיים",
-      "source_message_id": "false_972526031305-1627207927@g.us_3A481D34E836831A0475_94996204097669@lid",
-      "notification_message_id": "true_153768486285323@lid_3EB0E25206348DB997778C_out",
-      "source": "whatsapp",
-      "detected_at": "2026-08-05T14:31:07+03:00",
-      "action": "create",
-      "event": {
-        "title": "גסטרוסקופיה - לארי (נדרש ליווי)",
-        "start": "2026-08-11T19:00:00+03:00",
-        "end": "2026-08-11T20:00:00+03:00",
-        "location": "אסותא",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": true,
-      "status": "awaiting_response"
-    }
-  ],
+  "pending_events": [],
   "notify_queued": [],
   "issue_reported": [],
   "whatsapp_watermarks": {
-    "120363418733302181@g.us": 1785928972,
+    "120363418733302181@g.us": 1785935000,
     "120363422893729196@g.us": 1785926379,
     "120363135529295705@g.us": 1785923899,
     "120363331307089513@g.us": 1785849969,
@@ -109,7 +12,7 @@
     "120363095529495065@g.us": 1785849969,
     "120363096297634342@g.us": 1785849969,
     "120363142150464332@g.us": 1785848309,
-    "972526031305-1574143636@g.us": 1785928692,
+    "972526031305-1574143636@g.us": 1785933986,
     "120363310960312631@g.us": 1785927237,
     "120363302068553577@g.us": 1785852894,
     "972522248415-1336677083@g.us": 1785849969,
@@ -118,7 +21,7 @@
     "972526031305-1627207927@g.us": 1785870387,
     "80706831134808@lid": 1784057040,
     "94996204097669@lid": 1785920094,
-    "153768486285323@lid": 1785854157,
+    "153768486285323@lid": 1785932329,
     "30412730560648@lid": 1785917184,
     "108963353886800@lid": 1785849969,
     "972544386876-1622387330@g.us": 1784057040,
@@ -1338,7 +1241,7 @@
     "972525576061@s.whatsapp.net": 1785849969,
     "972525698066@s.whatsapp.net": 1785844771,
     "972525974818@s.whatsapp.net": 1785849969,
-    "972526031305@s.whatsapp.net": 1785854157,
+    "972526031305@s.whatsapp.net": 1785932329,
     "972526118809@s.whatsapp.net": 1785849969,
     "972526331177@s.whatsapp.net": 1785849969,
     "972526512072@s.whatsapp.net": 1785849969,
@@ -1545,6 +1448,30 @@
       "location": "הסגר באר שבע (לתיאום אמבר - 058-670-5288)",
       "source": "whatsapp",
       "rejected_at": "2026-08-04T16:29:01+03:00"
+    },
+    {
+      "title": "מפגש כתיבה ביער הקהילתי",
+      "date": "2026-08-12",
+      "start_time": "18:00",
+      "location": "ביער הקהילתי - כניסה מרח׳ ורד 92 (ליד החטצ)",
+      "source": "whatsapp",
+      "rejected_at": "2026-08-05T16:26:56+03:00"
+    },
+    {
+      "title": "חמל על הגג #2 - ערב היכרות וקהילה",
+      "date": "2026-08-09",
+      "start_time": "19:00",
+      "location": "הרצליה",
+      "source": "whatsapp",
+      "rejected_at": "2026-08-05T16:26:56+03:00"
+    },
+    {
+      "title": "גסטרוסקופיה - לארי (נדרש ליווי)",
+      "date": "2026-08-11",
+      "start_time": "19:00",
+      "location": "אסותא",
+      "source": "whatsapp",
+      "rejected_at": "2026-08-05T16:26:56+03:00"
     }
   ]
 }
