@@ -1,13 +1,6 @@
 {
   "pending_events": [],
-  "notify_queued": [
-    {
-      "kind": "run_summary",
-      "pending_event_id": null,
-      "text": "סריקה 08.08 11:10: 403 צ'אטים, 5 מועמדות, 0 הצעות חדשות, 0 תגובות. הכל תקין.",
-      "queued_at": "2026-08-08T11:14:32+03:00"
-    }
-  ],
+  "notify_queued": [],
   "issue_reported": [],
   "whatsapp_watermarks": {
     "120363418733302181@g.us": 1786124332,
