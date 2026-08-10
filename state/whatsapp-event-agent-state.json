@@ -1,5 +1,85 @@
 {
-  "pending_events": [],
+  "pending_events": [
+    {
+      "id": "f2483846-35a3-4437-ae31-2b90a6db630c",
+      "chat_id": "153768486285323@lid",
+      "chat_name": "Ami Hadjes",
+      "source_message_id": "19fea9095b9cd22f",
+      "notification_message_id": "true_153768486285323@lid_3EB0133E92239832CDF9BB_out",
+      "source": "gmail",
+      "gmail_thread_id": "19fea9095b9cd22f",
+      "gmail_link": "https://mail.google.com/mail/u/0/#inbox/19fea9095b9cd22f",
+      "detected_at": "2026-08-10T12:25:00+03:00",
+      "action": "create",
+      "event": {
+        "title": "איסוף רכב שכור (Centauro) - נמל התעופה פיומיצ'ינו, רומא",
+        "start": "2026-09-13T20:00:00+03:00",
+        "end": "2026-09-13T21:00:00+03:00",
+        "location": "2400 Via Portuense, Fiumicino, Italy, 00054",
+        "timezone": "Asia/Jerusalem"
+      },
+      "has_conflict": false,
+      "status": "awaiting_response"
+    },
+    {
+      "id": "2087f1a3-046e-4215-9ac6-afbce665bbff",
+      "chat_id": "153768486285323@lid",
+      "chat_name": "Ami Hadjes",
+      "source_message_id": "19fea9095b9cd22f",
+      "notification_message_id": "true_153768486285323@lid_3EB0E2DB761B3B6297BBD3_out",
+      "source": "gmail",
+      "gmail_thread_id": "19fea9095b9cd22f",
+      "gmail_link": "https://mail.google.com/mail/u/0/#inbox/19fea9095b9cd22f",
+      "detected_at": "2026-08-10T12:25:00+03:00",
+      "action": "create",
+      "event": {
+        "title": "החזרת רכב שכור (Centauro) - נמל התעופה פיומיצ'ינו, רומא",
+        "start": "2026-09-19T20:00:00+03:00",
+        "end": "2026-09-19T21:00:00+03:00",
+        "location": "24 Via Remo la Valle, Fiumicino, Italy, 00054",
+        "timezone": "Asia/Jerusalem"
+      },
+      "has_conflict": false,
+      "status": "awaiting_response"
+    },
+    {
+      "id": "b82eed55-32f0-4e72-9077-12f99b8366dd",
+      "chat_id": "153768486285323@lid",
+      "chat_name": "Ami Hadjes",
+      "source_message_id": "false_120363045500642682@g.us_3EB04BF663168EE04FFD06_154524803137788@lid",
+      "notification_message_id": "true_153768486285323@lid_3EB056EDB8B611D14BB454_out",
+      "source": "whatsapp",
+      "detected_at": "2026-08-10T12:25:00+03:00",
+      "action": "create",
+      "event": {
+        "title": "מועד אחרון להירשם - הרמת כוסית ראש השנה (מחלקה א')",
+        "all_day": true,
+        "date": "2026-08-13",
+        "timezone": "Asia/Jerusalem"
+      },
+      "has_conflict": false,
+      "status": "awaiting_response"
+    },
+    {
+      "id": "d203a6f5-0c64-4bf8-8940-8bf3309845e7",
+      "chat_id": "153768486285323@lid",
+      "chat_name": "Ami Hadjes",
+      "source_message_id": "false_120363422893729196@g.us_3A43300B6BFE57E5657C_118889191051372@lid",
+      "notification_message_id": "true_153768486285323@lid_3EB00375DD71BC8B3A611D_out",
+      "source": "whatsapp",
+      "detected_at": "2026-08-10T12:25:00+03:00",
+      "action": "create",
+      "event": {
+        "title": "יום טיולים בהסגר באר שבע (התנדבות)",
+        "all_day": true,
+        "date": "2026-08-11",
+        "location": "הסגר באר שבע (לתיאום אמבר - 058-670-5288)",
+        "timezone": "Asia/Jerusalem"
+      },
+      "has_conflict": false,
+      "status": "awaiting_response"
+    }
+  ],
   "notify_queued": [],
   "issue_reported": [],
   "whatsapp_watermarks": {
@@ -13,12 +93,12 @@
     "120363041360087604@g.us": 1786281806,
     "120363042194203243@g.us": 1786282052,
     "120363042569004221@g.us": 1786281806,
-    "120363045500642682@g.us": 1786265087,
+    "120363045500642682@g.us": 1786353691,
     "120363046641246849@g.us": 1786281806,
     "120363061295709804@g.us": 1786281806,
     "120363095529495065@g.us": 1786281806,
     "120363096297634342@g.us": 1786344409,
-    "120363135529295705@g.us": 1786339496,
+    "120363135529295705@g.us": 1786351840,
     "120363139385609649@g.us": 1786281806,
     "120363141961385984@g.us": 1786281806,
     "120363142150464332@g.us": 1786288696,
@@ -49,7 +129,7 @@
     "120363404393420920@g.us": 1786299020,
     "120363408378333416@g.us": 1786281806,
     "120363410639310292@g.us": 1786281806,
-    "120363418733302181@g.us": 1786345845,
+    "120363418733302181@g.us": 1786353380,
     "120363419353830700@g.us": 1786281806,
     "120363419595170854@g.us": 1786281806,
     "120363419946766365@g.us": 1786296604,
@@ -57,7 +137,7 @@
     "120363421614831794@g.us": 1786281806,
     "120363421770836197@g.us": 1786281806,
     "120363422040913196@g.us": 1786281806,
-    "120363422893729196@g.us": 1786346179,
+    "120363422893729196@g.us": 1786353600,
     "120363423669897926@g.us": 1786281806,
     "120363426843508584@g.us": 1786299977,
     "120363428202322878@g.us": 1786281806,
@@ -392,7 +472,7 @@
     "972549703735@s.whatsapp.net": 1786281806,
     "972549792726@s.whatsapp.net": 1786281806,
     "972549913474@s.whatsapp.net": 1786281806,
-    "972549994608-1391713973@g.us": 1786346536,
+    "972549994608-1391713973@g.us": 1786347705,
     "972549994608@s.whatsapp.net": 1786281806,
     "972556832186@s.whatsapp.net": 1786281806,
     "972559576562@s.whatsapp.net": 1786281806,
