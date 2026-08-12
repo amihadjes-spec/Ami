@@ -27,7 +27,7 @@ The agent manages state using five dedicated Gmail labels (automatically created
 ## Execution Workflow (Each Run)
 1. **Verify Labels:** Ensure `Ami/Event-Checked` and `Ami/Event-Suggested` exist (`list_labels` / `create_label`).
 2. **Fetch New Emails:** `-label:` negation on `Ami/Event-Checked` is unreliable in this Gmail tool (see "Known Issue: Broken Label Negation" below) — do NOT rely on it to exclude already-checked threads. Instead:
-   a. Query `search_threads` for `newer_than:2d -in:draft {-in:sent to:ami.hadjes@gmail.com}` (up to 50 per run). This agent is stateless (see "Trigger" above) and has no persisted last-run timestamp to query against; a fixed 2-day lookback comfortably covers the 3-hour run interval with margin for missed/delayed runs, while step 2b's per-thread label check (not the query) is what actually prevents reprocessing.
+   a. Query `search_threads` for `newer_than:2d -in:draft {-in:sent to:ami.hadjes@gmail.com}` (up to 50 per run). This agent is stateless (see "Trigger" above) and has no persisted last-run timestamp to query against; a fixed 2-day lookback comfortably covers the run interval with margin for missed/delayed runs, while step 2b's per-thread label check (not the query) is what actually prevents reprocessing.
 
    > **CRITICAL - copy this query character-for-character, including the `{...}` braces.** The braces mean OR: `-in:sent` OR `to:ami.hadjes@gmail.com`. Without them, the query becomes AND, which silently excludes every self-sent-to-self email (`From: ami.hadjes@gmail.com` AND `To: ami.hadjes@gmail.com`) - exactly the messages the user relies on for testing this agent. This has already happened once (2026-07-27): a self-sent test email was skipped for hours because the braces were dropped from the query at runtime. Do not "simplify" or rephrase this query in any way.
    b. For each returned thread, inspect its `labelIds` directly in the response and skip (do not re-process) any thread that already contains `Ami/Event-Checked`'s label ID. Only continue to step 3 for threads missing it.
@@ -61,15 +61,39 @@ The agent manages state using five dedicated Gmail labels (automatically created
 When a user responds to a proposal (immediately or in a later session), the agent processes the action as follows:
 
 1. **Approval Detection:** Affirmative responses containing phrases like "yes", "confirm", "go ahead", "כן", "מאשר", "✓" trigger event creation. This reply may arrive either as a reply within the Gmail thread (handled here) or as a WhatsApp reply to the bridged proposal (handled by the WhatsApp agent instead — see "WhatsApp Delivery Bridge"). Only one of the two ever actually creates the event; see step 3.
-2. **Calendar Insertion:** The agent executes `create_event` using the verified details. The `Ami/Event-Pending` label is then removed.
+2. **Calendar Insertion — verified success, strict order of operations (fixed 2026-07-10 after a thread was wrongly labeled `Ami/Event-Created` with no event actually created):**
+   (a) Call `create_event` with all proposed details (title, time, location if present, attendees if specified). At this stage, `description` contains **only** the exact email subject as free text — no link yet (see "Source-Email Link" below for why).
+   (b) **Verify actual success before doing anything else.** Inspect the real result of the call: it must include a valid event `id`, with no error. **If the call failed, timed out, or the response has no `id` — stop here.** Do not label `Ami/Event-Created`, do not remove `Ami/Event-Pending`/`Ami/Event-Notify-Queued`, and do not tell the user the event was created. Leave the thread exactly as it was (still Pending) so the next approval retries it, and state the failure explicitly in your summary to the user.
+   (c) **Only once (b) has confirmed real success:** apply `Ami/Event-Created`, and remove `Ami/Event-Pending` and `Ami/Event-Notify-Queued`.
+   (d) **Only once (c) is done:** issue a follow-up `update_event` that adds the source-email link line to the description (see "Source-Email Link" below).
 3. **Double-Booking Prevention:** Right before executing `create_event`: (a) re-fetch the thread's *current* labels — if `Ami/Event-Pending` is no longer present, the WhatsApp channel already resolved this (approved or rejected) first; skip creation entirely and inform the user it was already handled via WhatsApp, without touching labels further. (b) Otherwise, run a final `list_events` check over the event's timeframe, searching `fullText` for this thread's Gmail link (`https://mail.google.com/mail/u/0/#inbox/<id>`, which a WhatsApp-created event embeds verbatim in its description) rather than just the title — this is a precise match instead of a fuzzy title/time guess. If a match is found, creation is skipped, `Ami/Event-Pending` is removed, and the user is informed. Only if both checks pass does this agent actually call `create_event`.
 4. **Modification Requests:** If the user updates specific details (e.g., "Yes, but change the time to 15:00"), the agent updates the target field, preserves the remaining original data, and creates the event.
 5. **Rejection:** Negative responses ("no", "skip", "לא") cancel creation. `Ami/Event-Pending` is removed, leaving only `Ami/Event-Checked` and `Ami/Event-Suggested`.
 
+### Source-Email Link (label+subject search, updated 2026-07-06)
+Four earlier link formats were tried and all failed in practice for this user (all led to the general inbox, never the actual email):
+1. A direct link using the thread `id`.
+2. A direct link using the specific message `id` from `messages[]`.
+3. A subject-based search link without `in:anywhere`.
+4. A subject-based search link **with** `in:anywhere`.
+
+**Fifth attempt (current): a label+subject combination.** Once the thread is already labeled `Ami/Event-Created` (i.e. after the event has been created and the label already applied — not before), build a search link that combines the label with the subject, which drastically narrows the search scope (only emails this agent has already processed and marked):
+
+`https://mail.google.com/mail/u/0/#search/label%3AAmi-Event-Created+subject%3A"{url-encoded subject}"`
+
+(Note: `/` in the label name becomes `-` in Gmail's search syntax — `Ami/Event-Created` → `Ami-Event-Created`.)
+
+**Mandatory order of operations (do not change):** (1) create the event with no link yet — subject only, as free text; (2) label the thread `Ami/Event-Created` (and any other archival labels); (3) **only then** issue the follow-up `update_event` that adds the label+subject link line to the description. See "Calendar Insertion" above.
+
+**The exact-subject text stays mandatory at all times**, even once the link is added — it is never replaced by the link. Automated verification of the link (e.g. via WebFetch) isn't really possible: Gmail returns 403 without an authenticated browser session, so there's no way to confirm from here that the link actually works — **real verification has to be manual, by the user**, on each newly created event, at least until enough confidence accumulates that this approach works consistently.
+
+If this attempt also fails, fall back to "text only, no link" — do not try a sixth format without the user's approval.
+
 ### Edge Case Handlers
-* **Ambiguous Approvals:** If a user says "yes" but multiple pending proposals exist, the agent references the open `Ami/Event-Pending` threads and prompts the user to select the correct one.
+* **Ambiguous Approvals:** If a user says "yes" but multiple pending proposals exist, the agent references the open `Ami/Event-Pending` threads and reflects the ambiguity in its summary rather than pausing mid-run for a reply (see "Execution Instruction" above — the agent never blocks waiting for clarification).
 * **Delayed Approvals:** If a user approves a proposal hours later across a new session, the script accurately recovers the context using the `Ami/Event-Pending` thread markup.
 * **Re-evaluation Safeguard:** Previously rejected or processed threads never trigger duplicate proposals because they lack the `Ami/Event-Pending` markup and are skipped by the initial `Ami/Event-Checked` inbox filter.
+* **Duplicate creation guard:** Before creating, the agent also checks `list_events` (by time window, optionally `fullText`) for an already-existing similar event (same subject/nearby time) — even if several triggers have run since the original proposal, or the user already approved once before (e.g. an accidental double approval). If a matching event already exists, skip creation, remove `Ami/Event-Pending`, and inform the user it already exists on the calendar.
 
 ## WhatsApp Delivery Bridge
 
@@ -93,3 +117,8 @@ Deployed as a scheduled cron task via `claude-code-remote`. The script creates a
 ### Critical Infrastructure Note — Re-enabling Connectors
 The `create_trigger` and `update_trigger` API endpoints do not expose parameters to declare active MCP connectors. This setting is strictly managed at the routine/session level via the `claude-code-remote` UI. 
 **Whenever a trigger is re-created or overwritten** (e.g., to modify a system prompt), you must manually verify in the UI that the **Gmail** and **Google Calendar** connectors are explicitly enabled for the new trigger, otherwise the routine execution will fail.
+
+### If a Push Notification for a Pending Proposal Doesn't Arrive
+The trigger is configured with `notifications.push: true`, but actual push delivery also depends on the user's device having an active **Remote Control** connection — without one, there's no destination to send the alert to, even if the agent finished successfully and a proposal is genuinely waiting (labeled `Ami/Event-Pending`). If a run produced a new proposal and no notification arrived, check first whether Remote Control is connected and active, before assuming the agent didn't work.
+
+**Update:** verified in practice (2026-07-06) that Remote Control is connected and active for this user — a test push was sent and received successfully. So if a notification is missing in the future for a proposal that genuinely exists (`Ami/Event-Pending`), the Remote Control connection is no longer the first suspect: the more likely cause is the internal heuristic that decides whether a run is "notable" enough to push about — check that first.
