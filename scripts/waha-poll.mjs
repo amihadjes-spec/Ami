@@ -245,7 +245,17 @@ async function main() {
       if (m.fromMe) {
         if (!isSelfChat) continue;
         const hasReply = !!(m.replyTo && m.replyTo.id);
-        const isKnownOutgoing = sentNotificationIds.has(m.id);
+        // m.id from the messages endpoint is WAHA's composite form (e.g.
+        // "true_153768486285323@lid_3EB085764D314165CA4DF7_out"), while
+        // notification_message_id in state stores only the short WAHA
+        // id.id ("3EB085764D314165CA4DF7") — an exact Set.has(m.id) never
+        // matches, so every one of the agent's own past proposals kept
+        // resurfacing as a "fresh" candidate on every later run. Confirmed
+        // empirically 2026-08-12: 5 known-outgoing proposals reappeared in
+        // candidateMessages despite being tracked in sentNotificationIds.
+        // Match by substring instead, since the short id is always embedded
+        // verbatim inside the composite id.
+        const isKnownOutgoing = [...sentNotificationIds].some((id) => m.id.includes(id));
         // Discard only the agent's own previously-sent proposals (no reply,
         // already tracked). Keep genuine approval/rejection replies (a) and
         // fresh user-authored messages typed/pasted straight into the
