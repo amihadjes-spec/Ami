@@ -275,3 +275,25 @@ Practical implication: after any extended amiserver downtime, treat WhatsApp cov
 window as potentially incomplete — a manual glance at recently-active chats on the phone is the
 only current mitigation. Not yet built: an automated post-recovery check that flags "amiserver
 was down for N hours around HH:MM–HH:MM, worth reviewing WhatsApp manually for that window."
+
+## זיהוי רשימות ימי הולדת (birthday-list detection)
+
+הודעה שמכילה **רשימה של שם + תאריך** בפורמט כמו `DD.MM.YYYY` (או `DD.M.YYYY` וכדומה),
+ללא הקשר של פגישה/מפגש בודד — למשל כותרת כמו "ימי הולדת נכדים" ומספר שורות
+`<שם> - <תאריך>` — **אינה** נדחית כ"ללא תוכן אירוע קונקרטי". במקום זאת:
+
+1. **זיהוי**: 2+ שורות בפורמט `שם - תאריך` באותה הודעה = רשימת ימי הולדת.
+2. **פירוק**: כל שורה הופכת למועמד אירוע נפרד:
+   - כותרת: `יום הולדת - <שם>`
+   - סוג: אירוע יום שלם (all-day), ללא שעה, ללא מיקום
+   - חזרתיות: שנתית (yearly recurring) ב-DD.MM מהתאריך המקורי — שנת הלידה
+     המקורית **לא** נכללת בכותרת/בחזרה (רק DD.MM קובעים), אך נשמרת בתיאור האירוע
+     לצורך חישוב גיל אם רוצים בעתיד
+   - תיאור: "נולד/ה DD.MM.YYYY (מקור: [שם הצ'אט])"
+3. **דדופ**: כל שם+DD.MM נבדק בנפרד מול rejected_events והיומן (לא הרשימה כמקשה אחת) —
+   כך שאם נכד אחד כבר קיים ביומן, זה לא חוסם את השאר.
+4. **אישור**: נשלחת **הצעה מרוכזת אחת** בצ'אט העצמי, עם כל השמות/תאריכים ברשימה
+   וכפתור/תשובת כן-לא אחת. אישור "כן" יוצר את **כל** אירועי יום ההולדת בנפרד
+   ביומן (לא אירוע יחיד מרוכז); "לא" דוחה את כולם יחד ונרשם ל-rejected_events
+   כרשומה אחת ברמת ההודעה (לא לכל שם בנפרד), כדי לאפשר הצעה חוזרת חלקית
+   אם המשתמש ירצה בעתיד לאשר רק חלק מהשמות ידנית.
