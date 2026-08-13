@@ -257,3 +257,21 @@ By default, WAHA polling filters out `fromMe == true` to avoid processing the ag
 **Fix**: the watermark-advancement rule now only uses `now` as a fallback for a brand-new chat's initial 24h backfill coming back genuinely empty (see "Data Source / Polling Loop" step 3.d above) — safe, since the full window was just proven empty. For a **regular delta fetch on a chat that already had a watermark**, an empty result no longer advances the watermark at all; it's left unchanged, so the next run's window simply grows forward from the same starting point and will retry — and eventually see — anything that was missed due to a transient issue, rather than silently losing it the moment the fallback fires.
 
 **This does not repair proposals already lost to the old behavior** — those need to be resolved directly from the confirmed WhatsApp reply once found (as was done for the "גמר המונדיאל" proposal above, and for the `notification_message_id: null` incident on 2026-07-15), since the message itself remains genuinely un-repollable no matter how the watermark is rolled back or adjusted afterward.
+
+## Known limitation — messages lost during amiserver downtime (2026-08-13)
+
+**Confirmed 2026-08-13**: a WhatsApp message can be lost entirely at the WhatsApp/WAHA
+history-sync layer if it arrives while amiserver is down/unreachable for an extended window
+(e.g. the 2026-08-11 crash/GRUB-recovery incident, ~4.5h downtime). Direct query against
+WAHA'\''s own NOWEB persisted store (`store.sqlite3`, `messages` table) confirmed the missed
+message never arrived there at all — zero rows, even searched by exact phrase from the message
+body. Since `waha-poll.mjs` only ever sees what'\''s already in that store, there was no watermark,
+no candidate, and nothing for the agent to retry — this is data loss upstream of the agent'\''s
+own polling/dedup logic, not a bug in it. WhatsApp'\''s own history-sync-on-reconnect does not
+appear to reliably backfill every message across a multi-hour disconnection, especially for a
+chat with no watermark/prior history.
+
+Practical implication: after any extended amiserver downtime, treat WhatsApp coverage for that
+window as potentially incomplete — a manual glance at recently-active chats on the phone is the
+only current mitigation. Not yet built: an automated post-recovery check that flags "amiserver
+was down for N hours around HH:MM–HH:MM, worth reviewing WhatsApp manually for that window."
