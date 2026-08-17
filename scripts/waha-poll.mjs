@@ -232,7 +232,8 @@ async function main() {
     let messages, cappedOut;
     try {
       ({ messages, cappedOut } = await fetchChatMessagesSince(chatId, gte));
-    } catch {
+    } catch (err) {
+      console.error(`[waha-poll] skipping chat ${chatId} (${chatName}) after fetch error: ${err && err.message ? err.message : err}`);
       continue;
     }
     if (cappedOut) paginationCapHits.push(chatId);
