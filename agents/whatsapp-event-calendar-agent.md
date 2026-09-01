@@ -157,6 +157,12 @@ This agent never reads or acts on a *Gmail-side* reply — that stays the email 
     "972501234567@c.us": 1751980800
   }
 }
+## Host tag — `[LINUX]` (2026-09-01)
+
+This agent runs on more than one host (this machine, referred to here as the Linux host, plus at least one other — see the `(nucleus-agent)` tag already visible on some existing calendar events). To make it possible to tell, after the fact, which host/instance produced a given calendar event or notification:
+* **Calendar event descriptions**: for every event this agent (running on the Linux host) creates, end the description's `מקור:` line with a trailing `[LINUX]` tag — e.g. `מקור: זוהה אוטומטית מהודעת WhatsApp בקבוצת "תושבי להבים - הבית של כולנו" [LINUX]`. This applies to native WhatsApp detections and to Gmail-sourced creations (appended after the existing `"מקור: נוצר אוטומטית מתוך אימייל"` text) alike.
+* **ntfy titles**: every `ntfy` push this agent sends (see "Quiet Hours & Notification Dispatch" below) is prefixed with `[LINUX] ` in `--title` — this convention already existed in practice (visible across prior run history) but was never written down here until now.
+
 ## Approval Flow
 
 The agent strictly operates on a **suggest-and-confirm** loop. It never writes to the calendar automatically.
