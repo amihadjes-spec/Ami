@@ -194,6 +194,14 @@ During the polling phase, when scanning messages from the **self-chat**:
   * **Rejected** (e.g., "לא", "no", "דוחה", "ביטול", "אל תוסיף", 👎 — "דוחה" kept as a synonym for the same reason as "מאשר" above): Update status to `rejected`, clean it up from `pending_events`, and optionally acknowledge. For `source: "gmail"` entries, also remove `Ami/Event-Pending` from the Gmail thread (see "Gmail-Sourced Proposals").
   * **Modified** (e.g., "תשנה ל-18:00", "change to 6pm"): Extract the new parameters, update the draft in `pending_events`, check conflicts again, and send an updated proposal.
 
+### 4. Expired Proposal Suppression
+
+An event whose date/time has already passed must never trigger an outgoing notification about it — a new `proposal`, a reminder, or anything else — regardless of whether a reply was ever received.
+
+* **At detection (before queuing, see §1)**: if a candidate's start time (or date, for `all_day` candidates) is already in the past relative to current `Asia/Jerusalem` time, do not add it to `pending_events` / `notify_queued` at all. Treat it as nothing-to-do for that candidate — no proposal is ever sent for it.
+* **At dispatch (see §2)**: quiet-hours buffering can hold a queued item for hours. Immediately before sending each queued `proposal`, re-check the event's date/time against the current time. If it has since passed, drop the item from `notify_queued` and remove its `pending_events` entry without sending anything — not even an `ntfy` notice that it expired.
+* **Already-sent, still-unanswered proposals**: on every run, before processing self-chat replies (see §3), scan `pending_events` for entries with status `awaiting_response` whose event date/time has already passed with no reply received. Remove these silently — no reminder, nudge, or any other notification is sent about them, and the event is never created from a stale proposal. This is a silent expiry, not a rejection, so do **not** append these to `rejected_events`.
+
 ## Duplicate Issue Reporting Prevention
 
 To prevent spamming the user with repeated notifications about the same infrastructure failure (like WAHA being offline for hours):
