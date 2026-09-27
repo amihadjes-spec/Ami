@@ -243,6 +243,16 @@ async function main() {
     for (const m of messages) {
       if (typeof m.timestamp === 'number' && m.timestamp > maxTs) maxTs = m.timestamp;
 
+      // Defensive client-side re-filter: WAHA's server-side filter.timestamp.gte
+      // is not fully reliable — messages at or below the watermark have been
+      // observed resurfacing in the response despite the filter (e.g. the
+      // recurring "טיול 4X4" candidate reappearing on every run since
+      // 2026-09-24, confirmed against rejected_events every time). The
+      // watermark is authoritative for what's already been seen, so discard
+      // anything at or below it here rather than relying on downstream
+      // rejected_events matching to catch it every single run.
+      if (watermark && typeof m.timestamp === 'number' && m.timestamp <= watermark) continue;
+
       if (m.fromMe) {
         if (!isSelfChat) continue;
         const hasReply = !!(m.replyTo && m.replyTo.id);
