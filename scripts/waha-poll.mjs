@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 
 const WAHA_URL = process.env.WAHA_URL || 'http://localhost:3000';
@@ -279,6 +279,21 @@ async function main() {
       // rejected_events matching to catch it every single run.
       if (watermark && typeof m.timestamp === 'number' && m.timestamp <= watermark) continue;
 
+      // Root-cause found 2026-09-27 after the above guard alone did NOT stop
+      // the "טיול 4X4" resurfacing (confirmed still present in the 18:23 run):
+      // WAHA serves that specific message (true_..._3EB0191F04540652B8B24D_out)
+      // with timestamp: null, so it fails the numeric check above and slips
+      // through. A message with no usable timestamp can't be judged fresh vs.
+      // stale by either the server filter or the guard above, and every
+      // observed instance of this has turned out to be a stale re-serve of an
+      // already-resolved outgoing proposal — never a genuinely new message.
+      // Trade-off accepted: treat "no timestamp" as "already seen" and drop
+      // it here, rather than let it reach the LLM step every run. If a
+      // legitimately new message is ever missed because WAHA served it
+      // without a timestamp, that would show up as a message that never
+      // appears as a candidate at all — revisit this guard if that happens.
+      if (typeof m.timestamp !== 'number') continue;
+
       if (m.fromMe) {
         if (!isSelfChat) continue;
         const hasReply = !!(m.replyTo && m.replyTo.id);
@@ -328,6 +343,37 @@ async function main() {
     }
   }
 
+  // Pre-grouped, human/LLM-readable digest of candidateMessages by chat, so
+  // the run's LLM step can read one file once instead of writing ~10 ad-hoc
+  // node -e snippets each re-parsing the full candidateMessages JSON to look
+  // at one chat at a time (observed pattern in the 2026-09-27 13:23 run
+  // transcript — 30 Bash calls in one run, most of them exactly this). This
+  // is purely a convenience view; candidateMessages in the JSON output below
+  // remains the source of truth for exact IDs/fields.
+  const digestByChat = new Map();
+  for (const m of candidateMessages) {
+    const key = m.chatName || m.chatId;
+    if (!digestByChat.has(key)) digestByChat.set(key, []);
+    digestByChat.get(key).push(m);
+  }
+  const digestLines = [
+    `candidateMessages: ${candidateMessages.length} across ${digestByChat.size} chat(s)`,
+  ];
+  for (const [chatName, msgs] of digestByChat) {
+    digestLines.push('', `## ${chatName} (${msgs.length})`);
+    for (const m of msgs) {
+      const snippet = (m.body || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+      digestLines.push(`- [${m.messageId}] ${snippet}`);
+    }
+  }
+  const digestPath = '/tmp/waha-poll-digest.txt';
+  try {
+    writeFileSync(digestPath, digestLines.join('\n'), 'utf8');
+  } catch {
+    // Best-effort only — candidateMessages in the JSON output still has
+    // everything needed if the digest file can't be written for some reason.
+  }
+
   console.log(JSON.stringify({
     ok: true,
     sessionStatus: 'WORKING',
@@ -335,6 +381,7 @@ async function main() {
     candidateMessages,
     updatedWatermarks,
     paginationCapHits,
+    digestPath,
   }));
 }
 
