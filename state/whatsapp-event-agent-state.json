@@ -1139,5 +1139,8 @@
       "source": "whatsapp",
       "rejected_at": "2026-09-27T16:03:03+03:00"
     }
+  ],
+  "muted_chat_ids": [
+    "120363418733302181@g.us"
   ]
 }

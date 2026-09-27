@@ -45,6 +45,26 @@ function loadSentNotificationIds(path) {
   }
 }
 
+// Chats that are never a source of personal events (public news/broadcast
+// channels, etc.) — Ami maintains this list by hand in the state file
+// (muted_chat_ids). Muted chats are still polled and their watermark still
+// advances normally (so a chat can be un-muted later without a backfill),
+// but their messages never reach candidateMessages, so the LLM step never
+// has to spend reasoning re-rejecting the same non-event content on every
+// run. Added 2026-09-27 after "חדר מלחמה • 27" was observed producing
+// 2-58 pure-news candidate messages on every single run, 7x/day, with zero
+// events ever detected from it.
+function loadMutedChatIds(path) {
+  if (!path) return new Set();
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    const ids = Array.isArray(raw.muted_chat_ids) ? raw.muted_chat_ids : [];
+    return new Set(ids.filter((id) => typeof id === 'string' && id.length > 0));
+  } catch {
+    return new Set();
+  }
+}
+
 async function getJson(path, params) {
   const url = new URL(WAHA_URL + path);
   if (params) {
@@ -175,6 +195,7 @@ async function main() {
   const now = Math.floor(Date.now() / 1000);
   const watermarks = loadWatermarks(STATE_FILE);
   const sentNotificationIds = loadSentNotificationIds(STATE_FILE);
+  const mutedChatIds = loadMutedChatIds(STATE_FILE);
 
   const sessions = await getJson('/api/sessions');
   const session = sessions.find((s) => s.name === WAHA_SESSION);
@@ -239,9 +260,14 @@ async function main() {
     if (cappedOut) paginationCapHits.push(chatId);
 
     const isSelfChat = selfChatIds.has(chatId);
+    const isMuted = mutedChatIds.has(chatId);
     let maxTs = 0;
     for (const m of messages) {
       if (typeof m.timestamp === 'number' && m.timestamp > maxTs) maxTs = m.timestamp;
+
+      // Muted chat (see loadMutedChatIds): watermark still advances above,
+      // just never feed its content into candidateMessages.
+      if (isMuted) continue;
 
       // Defensive client-side re-filter: WAHA's server-side filter.timestamp.gte
       // is not fully reliable — messages at or below the watermark have been
