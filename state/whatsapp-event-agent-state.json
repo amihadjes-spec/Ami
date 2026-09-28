@@ -18,83 +18,6 @@
       },
       "has_conflict": true,
       "status": "awaiting_response"
-    },
-    {
-      "id": "d42d8fc4-183b-4039-8cfd-2f7d66cd4a43",
-      "chat_id": "120363422893729196@g.us",
-      "chat_name": "תושבי להבים - הבית של כולנו",
-      "source_message_id": "false_120363422893729196@g.us_3AE9C52AE29A38FC737C_118889191051372@lid",
-      "notification_message_id": "true_153768486285323@lid_3EB0CCA5F554C87768A0C1_out",
-      "source": "whatsapp",
-      "detected_at": "2026-09-28T14:25:24+03:00",
-      "action": "create",
-      "event": {
-        "title": "מופע אימפרו",
-        "start": "2026-10-29T21:00:00+03:00",
-        "end": "2026-10-29T22:00:00+03:00",
-        "location": "הפאב החברתי, להבים",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": false,
-      "status": "awaiting_response"
-    },
-    {
-      "id": "687d2846-062c-49f6-b317-740d74530494",
-      "chat_id": "972535330280-1603199679@g.us",
-      "chat_name": "הודעות מועצת להבים ",
-      "source_message_id": "false_972535330280-1603199679@g.us_3AB1365E974A3EFAC441_179710038413326@lid",
-      "notification_message_id": "true_153768486285323@lid_3EB0BF6F5FE9A71297FC26_out",
-      "source": "whatsapp",
-      "detected_at": "2026-09-28T18:26:59+03:00",
-      "action": "update",
-      "target_event_id": "prspqmsfpqpho1v4f304np5gfc",
-      "event": {
-        "title": "ערב זיכרון - שלוש שנים לטבח ה-7.10 (להבים)",
-        "start": "2026-10-05T19:45:00+03:00",
-        "end": "2026-10-05T20:45:00+03:00",
-        "location": "מועדון הנוער, להבים",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": false,
-      "status": "awaiting_response"
-    },
-    {
-      "id": "e9326af6-770d-4645-8a44-ca4e7a5d66c1",
-      "chat_id": "972535330280-1603199679@g.us",
-      "chat_name": "הודעות מועצת להבים ",
-      "source_message_id": "false_972535330280-1603199679@g.us_3AB1365E974A3EFAC441_179710038413326@lid",
-      "notification_message_id": "true_153768486285323@lid_3EB029169143FAC7E918CC_out",
-      "source": "whatsapp",
-      "detected_at": "2026-09-28T18:26:59+03:00",
-      "action": "create",
-      "event": {
-        "title": "הרצאתו של רפ\"ק אייל אהרון",
-        "all_day": true,
-        "date": "2026-10-21",
-        "location": "באזז 12, להבים",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": false,
-      "status": "awaiting_response"
-    },
-    {
-      "id": "546a3e74-32ff-4c6c-a586-cc848777c0ba",
-      "chat_id": "972535330280-1603199679@g.us",
-      "chat_name": "הודעות מועצת להבים ",
-      "source_message_id": "false_972535330280-1603199679@g.us_3AB1365E974A3EFAC441_179710038413326@lid",
-      "notification_message_id": "true_153768486285323@lid_3EB046DD05DA6E4A74E21C_out",
-      "source": "whatsapp",
-      "detected_at": "2026-09-28T18:26:59+03:00",
-      "action": "create",
-      "event": {
-        "title": "סרט ומפגש עם הבמאי - \"סגל חסר\"",
-        "all_day": true,
-        "date": "2026-11-05",
-        "location": "באזז 12, להבים",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": false,
-      "status": "awaiting_response"
     }
   ],
   "notify_queued": [],
@@ -146,7 +69,7 @@
     "120363404393420920@g.us": 1790605949,
     "120363408378333416@g.us": 1790515404,
     "120363410639310292@g.us": 1790515404,
-    "120363418733302181@g.us": 1790608621,
+    "120363418733302181@g.us": 1790615631,
     "120363419353830700@g.us": 1790515404,
     "120363419595170854@g.us": 1790515404,
     "120363419946766365@g.us": 1790515404,
@@ -154,7 +77,7 @@
     "120363421614831794@g.us": 1790515404,
     "120363421770836197@g.us": 1790515404,
     "120363422040913196@g.us": 1790515404,
-    "120363422893729196@g.us": 1790608116,
+    "120363422893729196@g.us": 1790613990,
     "120363423669897926@g.us": 1790515404,
     "120363426843508584@g.us": 1790529786,
     "120363428202322878@g.us": 1790515404,
@@ -164,8 +87,8 @@
     "140355789975776@lid": 1790515404,
     "147347560517671@lid": 1790515404,
     "14757574738066@lid": 1790515404,
-    "153235927109678@lid": 1790603110,
-    "153768486285323@lid": 1790602135,
+    "153235927109678@lid": 1790614615,
+    "153768486285323@lid": 1790610344,
     "158789286256753@lid": 1790516992,
     "159592529051812@lid": 1790515404,
     "160456337576001@lid": 1790515404,
@@ -347,7 +270,7 @@
     "972525974818@s.whatsapp.net": 1790515404,
     "972526031305-1574143636@g.us": 1790605426,
     "972526031305-1627207927@g.us": 1790515404,
-    "972526031305@s.whatsapp.net": 1790602135,
+    "972526031305@s.whatsapp.net": 1790610344,
     "972526118809@s.whatsapp.net": 1790515404,
     "972526331177@s.whatsapp.net": 1790515404,
     "972526512072@s.whatsapp.net": 1790515404,
@@ -1199,6 +1122,22 @@
       "location": "בריכת כרמים, להבים",
       "source": "whatsapp",
       "rejected_at": "2026-09-28T18:26:59+03:00"
+    },
+    {
+      "title": "מופע אימפרו",
+      "date": "2026-10-29",
+      "start_time": "21:00",
+      "location": "הפאב החברתי, להבים",
+      "source": "whatsapp",
+      "rejected_at": "2026-09-28T20:26:00+03:00"
+    },
+    {
+      "title": "סרט ומפגש עם הבמאי - \"סגל חסר\"",
+      "date": "2026-11-05",
+      "start_time": null,
+      "location": "באזז 12, להבים",
+      "source": "whatsapp",
+      "rejected_at": "2026-09-28T20:26:00+03:00"
     }
   ],
   "muted_chat_ids": [
