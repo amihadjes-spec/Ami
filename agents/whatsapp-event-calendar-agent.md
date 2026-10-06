@@ -20,7 +20,7 @@ At the start of every run:
 
 1. `git pull` the operational branch to get the latest state (the previous run happened in a different container).
 2. Load `state/whatsapp-event-agent-state.json` (create with an empty structure if missing). If the file exists but lacks `whatsapp_watermarks`, treat it as `{}` via default-merge, not as an error.
-3. Run `node scripts/waha-poll.mjs` (env vars `WAHA_URL`, `WAHA_API_KEY`, `WAHA_SESSION`; current `whatsapp_watermarks` passed as input). The script:
+3. Run `node scripts/waha-poll.mjs state/whatsapp-event-agent-state.json` (ALWAYS pass the state path as the first argument; without it the script would treat every chat as having no watermark and backfill 24h, which is slow; env vars `WAHA_URL`, `WAHA_API_KEY`, `WAHA_SESSION`; current `whatsapp_watermarks` passed as input). The script:
    a. Checks session status (`GET /api/sessions`).
    b. If unreachable (container/network) → returns an error.
    c. If reachable but `status != "WORKING"` → returns `ok:false` with `sessionStatus`.

@@ -4,7 +4,12 @@ import { homedir } from 'node:os';
 const WAHA_URL = process.env.WAHA_URL || 'http://localhost:3000';
 const WAHA_API_KEY = process.env.WAHA_API_KEY || '';
 const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
-const STATE_FILE = process.argv[2];
+// Defaults to the repo state file when no path is given, so a run without the
+// argument does a normal delta scan instead of a 24h backfill of every chat
+// (2026-10-06: 14:23 run took 40 min because the arg was omitted).
+const STATE_FILE =
+  process.argv[2] ||
+  new URL('../state/whatsapp-event-agent-state.json', import.meta.url).pathname;
 
 // Default matches this machine's WAHA volume mount (.waha-sessions bound to
 // /app/.sessions in the container); overridable in case the volume path or
