@@ -1,25 +1,5 @@
 {
-  "pending_events": [
-    {
-      "id": "gmail-1a132297495579d4",
-      "chat_id": "153768486285323@lid",
-      "chat_name": "Ami Hadjes",
-      "source": "gmail",
-      "gmail_thread_id": "1a132297495579d4",
-      "gmail_link": "https://mail.google.com/mail/u/0/#inbox/1a132297495579d4",
-      "detected_at": "2026-10-13T05:24:28.157Z",
-      "action": "create",
-      "event": {
-        "title": "דדליין Google Cloud: סימון OAuth clients של סוכני AI כ-agentic (sharp-bivouac-460605-r1)",
-        "all_day": true,
-        "date": "2026-11-11",
-        "timezone": "Asia/Jerusalem"
-      },
-      "has_conflict": true,
-      "notification_message_id": "true_153768486285323@lid_3EB03B5F7245EC86CEDA02_out",
-      "status": "awaiting_response"
-    }
-  ],
+  "pending_events": [],
   "notify_queued": [],
   "issue_reported": [],
   "whatsapp_watermarks": {
@@ -69,7 +49,7 @@
     "120363404393420920@g.us": 1791821970,
     "120363408378333416@g.us": 1790515404,
     "120363410639310292@g.us": 1790515404,
-    "120363418733302181@g.us": 1791868933,
+    "120363418733302181@g.us": 1791874951,
     "120363419353830700@g.us": 1790515404,
     "120363419595170854@g.us": 1790515404,
     "120363419946766365@g.us": 1790949253,
@@ -87,8 +67,8 @@
     "140355789975776@lid": 1790515404,
     "147347560517671@lid": 1790515404,
     "14757574738066@lid": 1791830254,
-    "153235927109678@lid": 1791822427,
-    "153768486285323@lid": 1791829727,
+    "153235927109678@lid": 1791871807,
+    "153768486285323@lid": 1791871876,
     "158789286256753@lid": 1790516992,
     "159592529051812@lid": 1790515404,
     "160456337576001@lid": 1790515404,
@@ -229,7 +209,7 @@
     "972523080456@s.whatsapp.net": 1790515404,
     "972523273766@s.whatsapp.net": 1790515404,
     "972523274452@s.whatsapp.net": 1790515404,
-    "972523430767@s.whatsapp.net": 1790515404,
+    "972523430767@s.whatsapp.net": 1791873180,
     "972523516369@s.whatsapp.net": 1790515404,
     "972523670779@s.whatsapp.net": 1790515404,
     "972523768804@s.whatsapp.net": 1790515404,
@@ -270,7 +250,7 @@
     "972525974818@s.whatsapp.net": 1790515404,
     "972526031305-1574143636@g.us": 1791729318,
     "972526031305-1627207927@g.us": 1791706238,
-    "972526031305@s.whatsapp.net": 1791829727,
+    "972526031305@s.whatsapp.net": 1791871876,
     "972526118809@s.whatsapp.net": 1791268335,
     "972526331177@s.whatsapp.net": 1790515404,
     "972526512072@s.whatsapp.net": 1790515404,
@@ -1110,6 +1090,12 @@
       "location": "הגינה הקהילתית, בית ביערה, להבים",
       "source": "whatsapp",
       "rejected_at": "2026-10-13T05:24:28.156Z"
+    },
+    {
+      "title": "דדליין Google Cloud: סימון OAuth clients של סוכני AI כ-agentic (sharp-bivouac-460605-r1)",
+      "date": "2026-11-11",
+      "source": "gmail",
+      "rejected_at": "2026-10-13T07:23:41.290Z"
     }
   ],
   "muted_chat_ids": [
