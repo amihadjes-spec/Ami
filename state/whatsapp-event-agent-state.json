@@ -21,7 +21,13 @@
     }
   ],
   "notify_queued": [],
-  "issue_reported": [],
+  "issue_reported": [
+    {
+      "issue_key": "waha-session-not-working:STARTING",
+      "first_reported_at": "2026-10-14T14:26:00+03:00",
+      "description": "סשן WAHA במצב STARTING ולא WORKING, 4 ניסיונות במשך כ-2 דקות; הסריקה דולגה"
+    }
+  ],
   "whatsapp_watermarks": {
     "104338378723526@lid": 1790515404,
     "108963353886800@lid": 1791956610,
