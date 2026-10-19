@@ -1,7 +1,13 @@
 {
   "pending_events": [],
   "notify_queued": [],
-  "issue_reported": [],
+  "issue_reported": [
+    {
+      "issue_key": "waha-session-not-working:STARTING",
+      "first_reported_at": "2026-10-19T12:30:00+03:00",
+      "description": "WAHA session stuck in STARTING after net::ERR_NAME_NOT_RESOLVED at 12:16 IDT; event detection skipped"
+    }
+  ],
   "whatsapp_watermarks": {
     "104338378723526@lid": 1790515404,
     "108963353886800@lid": 1791956610,
