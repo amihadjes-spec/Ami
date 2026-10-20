@@ -16,9 +16,17 @@ def pdate(s):
         return None
 
 
+def supplier_map():
+    return load(STATE_DIR / 'supplier_map.json', {'aliases': {}, 'labels': {}})
+
+
+def canon(name):
+    return supplier_map().get('aliases', {}).get((name or '').strip(), (name or '').strip())
+
+
 def norm(ex, meta):
     out = dict(ex)
-    out['supplier'] = (str(ex.get('supplier') or '').strip())
+    out['supplier'] = canon(str(ex.get('supplier') or ''))
     out['doc_type'] = ex.get('doc_type') or 'invoice'
     try:
         out['amount'] = float(str(ex.get('amount_total')).replace(',', '')) if ex.get('amount_total') is not None else None
@@ -129,7 +137,7 @@ def hist_record(ex, meta, files, status, by, shas=None):
     return {'supplier': ex['supplier'], 'doc_type': ex['doc_type'], 'doc_no': ex['doc_no'], 'doc_date': ex['doc_date'],
             'period_from': ex.get('period_from'), 'period_to': ex.get('period_to'), 'amount': ex['amount'],
             'currency': ex['currency'], 'account_ref': ex['account_ref'], 'source': meta.get('source'),
-            'item_id': meta['item_id'], 'files': files, 'status': status, 'by': by, 'shas': shas or [],
+            'item_id': meta['item_id'], 'message_id': meta.get('message_id'), 'files': files, 'status': status, 'by': by, 'shas': shas or [],
             'at': datetime.datetime.now().isoformat(timespec='seconds')}
 
 
@@ -186,7 +194,7 @@ def run(baseline=False):
             st['next_code'] += 1
             pdir = PENDING / str(code)
             files = copy_files(d, meta, ex, pdir)
-            st['pending'][str(code)] = {'extraction': ex, 'meta': {k: meta.get(k) for k in ('item_id', 'source', 'subject', 'from', 'caption', 'chat', 'date', 'link')},
+            st['pending'][str(code)] = {'extraction': ex, 'meta': {k: meta.get(k) for k in ('item_id', 'source', 'subject', 'from', 'caption', 'chat', 'date', 'link', 'message_id')},
                                         'reasons': reasons, 'ref': ref, 'files': files, 'created': time.time()}
             rep['review'].append(dict(label, code=code, reasons=reasons, ref=ref, files=files, subject=meta.get('subject') or meta.get('caption')))
             hist.append(hist_record(ex, meta, files, 'pending', 'pending', shas))
@@ -259,6 +267,8 @@ if __name__ == '__main__':
         for h in load(HIST, []):
             if h.get('status') == 'filed':
                 seen.setdefault(h['supplier'], set()).add(h.get('account_ref') or '')
+        for lab in supplier_map().get('labels', {}):
+            seen.setdefault(lab, set())
         for s, a in sorted(seen.items()):
             print(s + ((' | account_ref: ' + ', '.join(x for x in sorted(a) if x)) if any(a) else ''))
     else:

@@ -32,6 +32,7 @@ Rules:
 - `is_invoice` is true only for a real tax invoice, invoice-receipt, receipt, credit note or bill with an amount. Marketing mail, order confirmations without a payment document, statements without a charge, chat, newsletters = false (then the other keys can be omitted).
 - `amount_total` is the final amount to pay including VAT, as a positive number (negative for a credit note). Never guess: if the amount is not readable, use null.
 - `supplier` must be the same short name every time for the same company. The wrapper gives the list of existing supplier names (and their account_ref values): reuse them exactly. A new supplier gets a short plain name (for example "איתוראן", "חברת חשמל", "פרדיגמה", "פרטנר", "צוות 3").
+- Supplier names are the Gmail label names under חשבוניות/ (the wrapper lists them; aliases are normalized by state/supplier_map.json). Team 3 sends two different things: building committee (ועד בית - צוות 3) and the security/monitoring service (מוקד 24); choose by the document content, never use plain 'צוות 3'.
 - `account_ref` separates different series of the same supplier: electricity contract number, a care recipient for a care agency, a vehicle or line number. Use the identifier printed on the document, same format every time.
 - `doc_type`: a receipt (קבלה) is not an invoice; the same payment may legitimately appear as both.
 - Dates must come from the document itself, not from the email date, unless the document has none.
@@ -47,6 +48,9 @@ Rules:
 - 1-2 invoices on record: deviation above 50% and above 50 NIS from their average.
 - Currency change, credit note or negative amount, amount above 5000, future date, unreadable supplier/amount/date: review.
 - Same supplier + doc type + number, or same date + amount without a number: duplicate, reported and not filed again. A document Ami rejected before is not proposed again.
+
+## Gmail labels
+After filing, `invoice_label.py` adds the existing Gmail label for the supplier (map in /home/ami/invoices/state/supplier_map.json) to the source email, or the root label חשבוניות when the supplier has no label. It never creates labels (it checks the label exists first). Older records are not labeled unless run with --include-old.
 
 ## Approval
 Review messages go to the WhatsApp self-chat with the file attached and a code (#N). Reply on that message with כן / לא, or type "אשר N" / "דחה N". Last reply wins. Approved: filed and added to history (it becomes a new baseline). Rejected: moved to rejected/, not added to history. Unanswered items get one reminder per 24 hours after 20 hours.
