@@ -2,7 +2,7 @@
 """Deterministic decision layer: compares extracted invoices to history, files or holds for review.
 Usage: invoice_decide.py run [--baseline] | approve CODE | reject CODE | status | suppliers
 """
-import sys, json, shutil, statistics, time, datetime
+import sys, json, shutil, statistics, time, datetime, hashlib
 from pathlib import Path
 from invoice_common import *
 
@@ -125,11 +125,11 @@ def copy_files(d, meta, ex, target_dir):
     return out
 
 
-def hist_record(ex, meta, files, status, by):
+def hist_record(ex, meta, files, status, by, shas=None):
     return {'supplier': ex['supplier'], 'doc_type': ex['doc_type'], 'doc_no': ex['doc_no'], 'doc_date': ex['doc_date'],
             'period_from': ex.get('period_from'), 'period_to': ex.get('period_to'), 'amount': ex['amount'],
             'currency': ex['currency'], 'account_ref': ex['account_ref'], 'source': meta.get('source'),
-            'item_id': meta['item_id'], 'files': files, 'status': status, 'by': by,
+            'item_id': meta['item_id'], 'files': files, 'status': status, 'by': by, 'shas': shas or [],
             'at': datetime.datetime.now().isoformat(timespec='seconds')}
 
 
@@ -164,7 +164,13 @@ def run(baseline=False):
         items.append((d, meta, norm(ex, meta)))
     items.sort(key=lambda t: t[2]['doc_date'] or '')
     for d, meta, ex in items:
+        shas = [hashlib.md5((d / f).read_bytes()).hexdigest() for f in meta.get('files', []) if (d / f).exists()]
         verdict, reasons, ref = evaluate(ex, hist, S)
+        if verdict not in ('duplicate', 'rejected_dup') and shas:
+            for h in hist:
+                if h['supplier'] == ex['supplier'] and set(shas) & set(h.get('shas', [])):
+                    verdict, reasons = ('rejected_dup' if h.get('status') == 'rejected' else 'duplicate'), ['אותו קובץ בדיוק כמו מסמך קודם']
+                    break
         label = {'supplier': ex['supplier'], 'doc_no': ex['doc_no'], 'doc_date': ex['doc_date'], 'amount': ex['amount'],
                  'currency': ex['currency'], 'item': meta['item_id'], 'source': meta.get('source'), 'account_ref': ex['account_ref']}
         if verdict in ('duplicate', 'rejected_dup'):
@@ -172,7 +178,7 @@ def run(baseline=False):
             shutil.rmtree(d, ignore_errors=True)
         elif verdict == 'ok' or baseline:
             files = copy_files(d, meta, ex, file_dir(ex))
-            hist.append(hist_record(ex, meta, files, 'filed', 'baseline' if baseline else 'auto'))
+            hist.append(hist_record(ex, meta, files, 'filed', 'baseline' if baseline else 'auto', shas))
             rep['filed'].append(dict(label, folder=str(file_dir(ex)), note=('' if verdict == 'ok' else '; '.join(reasons))))
             shutil.rmtree(d, ignore_errors=True)
         else:
@@ -183,7 +189,7 @@ def run(baseline=False):
             st['pending'][str(code)] = {'extraction': ex, 'meta': {k: meta.get(k) for k in ('item_id', 'source', 'subject', 'from', 'caption', 'chat', 'date', 'link')},
                                         'reasons': reasons, 'ref': ref, 'files': files, 'created': time.time()}
             rep['review'].append(dict(label, code=code, reasons=reasons, ref=ref, files=files, subject=meta.get('subject') or meta.get('caption')))
-            hist.append(hist_record(ex, meta, files, 'pending', 'pending'))
+            hist.append(hist_record(ex, meta, files, 'pending', 'pending', shas))
             shutil.rmtree(d, ignore_errors=True)
     # history entries with status 'pending' are excluded from comparisons (status != filed) but still block duplicates
     save(HIST, hist)
