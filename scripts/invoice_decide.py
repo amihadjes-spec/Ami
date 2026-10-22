@@ -199,6 +199,10 @@ def run(baseline=False):
             rep['review'].append(dict(label, code=code, reasons=reasons, ref=ref, files=files, subject=meta.get('subject') or meta.get('caption')))
             hist.append(hist_record(ex, meta, files, 'pending', 'pending', shas))
             shutil.rmtree(d, ignore_errors=True)
+    prev = load(REPORT, None)
+    if prev and not prev.get('notified') and not prev.get('baseline') and not baseline:
+        for k in ('filed', 'review', 'duplicate', 'errors'):
+            rep[k] = prev.get(k, []) + rep[k]
     # history entries with status 'pending' are excluded from comparisons (status != filed) but still block duplicates
     save(HIST, hist)
     save(STATE, st)

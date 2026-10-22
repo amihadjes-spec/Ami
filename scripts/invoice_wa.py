@@ -54,6 +54,12 @@ def money(a, cur):
 def notify():
     rep = load(REPORT, {}) or {}
     st = get_state()
+    if os.environ.get('INVOICE_QUIET') == '1':
+        return
+    if st.get('outbox'):
+        send_text(st, 'סוכן החשבוניות\n' + '\n'.join(st['outbox']))
+        st['outbox'] = []
+        save(STATE, st)
     if rep.get('notified'):
         return
     if rep.get('baseline'):
@@ -149,7 +155,10 @@ def process_replies():
             out.append(f'לא הבנתי את התשובה על #{code}. השב כן או לא.')
     st['wa_reply_watermark'] = top
     if out:
-        send_text(st, 'סוכן החשבוניות\n' + '\n'.join(out))
+        if os.environ.get('INVOICE_QUIET') == '1':
+            st['outbox'] = st.get('outbox', []) + out
+        else:
+            send_text(st, 'סוכן החשבוניות\n' + '\n'.join(out))
     save(STATE, st)
     print(json.dumps({'processed': len(decisions), 'unknown': len(unknown)}, ensure_ascii=False))
 

@@ -59,4 +59,4 @@ Review messages go to the WhatsApp self-chat with the file attached and a code (
 First run: `run-invoice-agent.sh --baseline 90` reads the last 90 days of invoices, files them and builds the history with no review and no notifications, only a one-line summary.
 
 ## Quiet hours
-Wrapper skips runs between 22:00 and 08:00 Asia/Jerusalem. Failures go to ntfy (same topic as the WhatsApp agent).
+Between 22:00 and 08:00 Asia/Jerusalem the agent still works in the background (fetch, extract, decide, Gmail labels, applying replies) but sends nothing: no WhatsApp, no ntfy. Reports, reply confirmations and failures are held and delivered at the first active run (08:41).
