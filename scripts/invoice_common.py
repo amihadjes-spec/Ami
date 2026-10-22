@@ -89,4 +89,8 @@ def self_chat_id():
 
 
 def short_id(mid):
-    return str(mid).split('_')[-1] if mid else ''
+    """WAHA ids look like true_<chat>_<MSGID>_out (self-chat) or bare <MSGID> in replyTo."""
+    s = str(mid or '')
+    if s.endswith('_out'):
+        s = s[:-4]
+    return s.split('_')[-1]
