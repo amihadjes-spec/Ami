@@ -51,7 +51,7 @@ Rules:
 - Same supplier + doc type + number, or same date + amount without a number: duplicate, reported and not filed again. A document Ami rejected before is not proposed again.
 
 ## Gmail labels
-After filing, `invoice_label.py` adds the existing Gmail label for the supplier (map in /home/ami/invoices/state/supplier_map.json) to the source email, or the root label חשבוניות when the supplier has no label. It never creates labels (it checks the label exists first). Older records are not labeled unless run with --include-old.
+After filing, `invoice_label.py` adds the existing Gmail label for the supplier (map in /home/ami/invoices/state/supplier_map.json) to the source email, or the root label חשבוניות when the supplier has no label. It never creates labels (it checks the label exists first). Once a record is filed and labeled, the same step also removes the email from the Inbox (archive only: the INBOX label is removed, nothing is deleted, the mail stays in All Mail under its label). Held-for-review emails stay in the Inbox until approved. Switch off with `"archive_filed_from_inbox": false` in state/supplier_map.json. Baseline (old) emails are not touched. Older records are not labeled unless run with --include-old.
 
 ## Approval
 Review messages go to the WhatsApp self-chat with the file attached and a code (#N). Reply on that message with כן / לא, or type "אשר N" / "דחה N". Last reply wins. Approved: filed and added to history (it becomes a new baseline). Rejected: moved to rejected/, not added to history. Unanswered items get one reminder per 24 hours after 20 hours.

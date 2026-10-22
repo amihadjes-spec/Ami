@@ -79,15 +79,19 @@ def main():
                         res['backfilled'] += 1
         M.logout()
         save(HIST, hist)
+    archive = mp.get('archive_filed_from_inbox', True)
+    include_old = '--include-old' in args
     todo = [h for h in hist if h['status'] == 'filed' and h['source'] == 'email' and h.get('message_id')
-            and (not h.get('labeled') or (h.get('labeled') == 'old' and '--include-old' in args))
+            and (h.get('labeled') != 'old' or include_old)
+            and (not h.get('labeled') or h.get('labeled') == 'old' or (archive and not h.get('archived')))
             and (not only or h['supplier'] == only)]
     if todo:
         M = connect(False)
         have = existing_labels(M)
         for h in todo:
             label = mp.get('labels', {}).get(h['supplier']) or mp.get('default_label', 'חשבוניות')
-            if label not in have:
+            need_label = (not h.get('labeled')) or h.get('labeled') == 'old'
+            if need_label and label not in have:
                 res['skipped'].append(f"{h['supplier']}: התווית '{label}' לא קיימת")
                 continue
             t, d = M.uid('SEARCH', 'HEADER', 'Message-ID', '"' + h['message_id'].strip('<>') + '"')
@@ -95,10 +99,18 @@ def main():
             if not uids:
                 res['skipped'].append(f"{h['supplier']}: המייל לא נמצא")
                 continue
-            t, r = M.uid('STORE', uids[0], '+X-GM-LABELS', '("' + menc(label) + '")')
-            if t == 'OK':
-                h['labeled'] = label
-                res['labeled'] += 1
+            if need_label:
+                t, r = M.uid('STORE', uids[0], '+X-GM-LABELS', '("' + menc(label) + '")')
+                if t == 'OK':
+                    h['labeled'] = label
+                    res['labeled'] += 1
+                else:
+                    continue
+            if archive and h.get('labeled') and h.get('labeled') != 'old' and not h.get('archived'):
+                t, r = M.uid('STORE', uids[0], '-X-GM-LABELS', '(\\Inbox)')
+                if t == 'OK':
+                    h['archived'] = True
+                    res['archived'] = res.get('archived', 0) + 1
         M.logout()
         save(HIST, hist)
     print(json.dumps(res, ensure_ascii=False))
