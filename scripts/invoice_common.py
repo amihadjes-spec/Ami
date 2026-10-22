@@ -55,6 +55,9 @@ def default_state():
         'agent_sent_ids': [],
         'next_code': 1,
         'last_reminder': 0,
+        'card_seen': [],
+        'card_approved': [],
+        'card_done': [],
     }
 
 

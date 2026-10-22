@@ -64,3 +64,10 @@ Between 22:00 and 08:00 Asia/Jerusalem the agent still works in the background (
 
 ## WAHA message ids (lesson 2026-10-22)
 Self-chat message ids look like `true_<chat>_<MSGID>_out`, while `replyTo.id` is the bare `<MSGID>`. Always normalize with `short_id()` in invoice_common.py (strips `_out`, takes the last segment) before comparing ids. Never derive an id by plain split on the last underscore: it returns "out" for every message and makes the agent ignore replies.
+
+## Credit-card charge notices (email only)
+Monthly "charge detail" notices from Isracard and Cal (config: `card_notices` in state/supplier_map.json: sources with sender domains and Gmail label, `forward_to`, lookback days) are handled by `invoice_cards.py`, not by the invoice pipeline (invoice_fetch_email skips them).
+1. The email is forwarded to Nirit (nirithadjes@gmail.com) via SMTP with the same app password, original attached as message/rfc822. If the Gmail thread already contains a message sent to her (Ami forwarded by hand), nothing is sent again.
+2. A WhatsApp request (#N) goes to the self-chat. Reply כן / לא, or type "אשר N" / "דחה N" (same mechanism as invoices).
+3. On approval `invoice_label.py` adds the label (חשבוניות/ישראכרט, also used for Cal) to every message in the thread and removes the Inbox label. On rejection nothing changes and the email stays in the Inbox.
+Quiet hours (22:00-08:00): no forwarding and no WhatsApp; handled at the first active run. A failed forward is not marked as seen, so it is retried next run.

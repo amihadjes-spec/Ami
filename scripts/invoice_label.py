@@ -4,7 +4,7 @@ Usage: invoice_label.py [--backfill-ids] [--include-old] [--only-supplier NAME]
  default: label filed email records that have a message_id and no 'labeled' mark (new invoices only).
  --backfill-ids: fill message_id on older records (mailbox untouched); they are marked old and NOT labeled unless --include-old.
 """
-import imaplib, re, sys, json, base64, hashlib
+import imaplib, re, sys, json, base64, hashlib, time
 from invoice_common import *
 import invoice_decide as D
 
@@ -113,6 +113,30 @@ def main():
                     res['archived'] = res.get('archived', 0) + 1
         M.logout()
         save(HIST, hist)
+    st = get_state()
+    if st.get('card_approved'):
+        M = connect(False)
+        have = existing_labels(M)
+        for c in list(st['card_approved']):
+            if c['label'] not in have:
+                res['skipped'].append(f"{c['name']}: התווית '{c['label']}' לא קיימת")
+                continue
+            t, d = M.uid('SEARCH', 'X-GM-THRID', str(c.get('thrid') or '0'))
+            uids = d[0].split() if t == 'OK' and d and d[0] else []
+            if not uids:
+                res['skipped'].append(f"{c['name']}: השרשור לא נמצא")
+                continue
+            ok = True
+            for u in uids:
+                t1, _ = M.uid('STORE', u, '+X-GM-LABELS', '("' + menc(c['label']) + '")')
+                t2, _ = M.uid('STORE', u, '-X-GM-LABELS', '(\\Inbox)')
+                ok = ok and t1 == 'OK' and t2 == 'OK'
+            if ok:
+                st['card_approved'].remove(c)
+                st['card_done'].append(dict(c, at=time.strftime('%Y-%m-%dT%H:%M:%S')))
+                res['cards_filed'] = res.get('cards_filed', 0) + 1
+        M.logout()
+        save(STATE, st)
     print(json.dumps(res, ensure_ascii=False))
 
 

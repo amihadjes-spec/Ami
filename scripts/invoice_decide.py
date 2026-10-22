@@ -221,6 +221,11 @@ def approve(code):
     p = st['pending'].get(str(code))
     if not p:
         return f'#{code} לא נמצאה בין הממתינות'
+    if p.get('kind') == 'card':
+        st['card_approved'].append({'message_id': p['message_id'], 'thrid': p.get('thrid'), 'label': p['label'], 'name': p['name'], 'subject': p['subject']})
+        del st['pending'][str(code)]
+        save(STATE, st)
+        return f"#{code} אושרה: {p['name']}, התיוק ב-Gmail והסרה מהדואר הנכנס יתבצעו בריצה הקרובה"
     ex, meta = p['extraction'], p['meta']
     ex['doc_date'] = ex.get('doc_date') or (meta.get('date') or datetime.date.today().isoformat())
     ex['supplier'] = ex.get('supplier') or 'לא_מזוהה'
@@ -247,6 +252,10 @@ def reject(code):
     p = st['pending'].get(str(code))
     if not p:
         return f'#{code} לא נמצאה בין הממתינות'
+    if p.get('kind') == 'card':
+        del st['pending'][str(code)]
+        save(STATE, st)
+        return f"#{code} נדחתה: {p['name']}, המייל נשאר בדואר הנכנס ללא תיוק"
     meta, ex = p['meta'], p['extraction']
     rdir = REJECTED / str(code)
     rdir.mkdir(parents=True, exist_ok=True)
@@ -283,4 +292,4 @@ if __name__ == '__main__':
             print(s + ((' | account_ref: ' + ', '.join(x for x in sorted(a) if x)) if any(a) else ''))
     else:
         st = get_state()
-        print(json.dumps({'pending': {k: v['reasons'] for k, v in st['pending'].items()}, 'history': len(load(HIST, [])), 'inbox': len(list(INBOX.iterdir()))}, ensure_ascii=False))
+        print(json.dumps({'pending': {k: v.get('reasons', v.get('kind')) for k, v in st['pending'].items()}, 'history': len(load(HIST, [])), 'inbox': len(list(INBOX.iterdir()))}, ensure_ascii=False))

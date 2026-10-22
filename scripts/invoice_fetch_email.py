@@ -8,6 +8,7 @@ from email.header import decode_header, make_header
 from invoice_common import *
 
 CRED = Path('/home/ami/.invoice-imap')
+CARD_DOMAINS = [d for s_ in ((load(STATE_DIR / 'supplier_map.json', {}) or {}).get('card_notices') or {}).get('sources', []) for d in s_['domains']]
 OKEXT = {'.pdf', '.jpg', '.jpeg', '.png', '.heic', '.webp'}
 MAX_ITEMS = 40
 
@@ -63,6 +64,8 @@ def main():
             continue
         msg = email.message_from_bytes(md[0][1])
         mid = (msg.get('Message-ID') or '').strip()
+        if any(dm in (msg.get('From') or '').lower() for dm in CARD_DOMAINS) and re.search(r'חיוב|פירוט', dh(msg.get('Subject'))):
+            continue
         if not mid or mid in seen:
             skipped += 1
             continue
