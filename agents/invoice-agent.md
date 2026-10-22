@@ -60,3 +60,6 @@ First run: `run-invoice-agent.sh --baseline 90` reads the last 90 days of invoic
 
 ## Quiet hours
 Between 22:00 and 08:00 Asia/Jerusalem the agent still works in the background (fetch, extract, decide, Gmail labels, applying replies) but sends nothing: no WhatsApp, no ntfy. Reports, reply confirmations and failures are held and delivered at the first active run (08:41).
+
+## WAHA message ids (lesson 2026-10-22)
+Self-chat message ids look like `true_<chat>_<MSGID>_out`, while `replyTo.id` is the bare `<MSGID>`. Always normalize with `short_id()` in invoice_common.py (strips `_out`, takes the last segment) before comparing ids. Never derive an id by plain split on the last underscore: it returns "out" for every message and makes the agent ignore replies.
