@@ -47,6 +47,7 @@ Rules:
 - Variable supplier (3+ invoices): deviation above 25% and above 50 NIS from the same period last year (if it exists) else the median of the last 3.
 - 1-2 invoices on record: deviation above 50% and above 50 NIS from their average.
 - Currency change, credit note or negative amount, amount above 5000, future date, unreadable supplier/amount/date: review.
+- Usage-based suppliers (list `usage_based` in state/supplier_map.json, currently פנגו, whose amount follows parking duration): no amount-deviation check. They are still held for a new supplier/account_ref, currency change, credit, amount above 5000, future date, unreadable fields, and duplicates.
 - Same supplier + doc type + number, or same date + amount without a number: duplicate, reported and not filed again. A document Ami rejected before is not proposed again.
 
 ## Gmail labels

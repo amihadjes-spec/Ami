@@ -82,6 +82,12 @@ def evaluate(ex, hist, S):
         ref = last
         if last.get('currency') and last['currency'] != ex['currency']:
             reasons.append(f"מטבע השתנה: {last['currency']} ל-{ex['currency']}")
+        if ex['supplier'] in set(supplier_map().get('usage_based', [])):
+            # amount follows usage (e.g. parking duration): no deviation check, other checks still apply
+            fd0 = pdate(ex['doc_date'])
+            if fd0 and (fd0 - datetime.date.today()).days > 7:
+                reasons.append('תאריך עתידי')
+            return ('review' if reasons else 'ok'), reasons, ref
         recent = ser[-3:]
         amts = [h['amount'] for h in recent]
         mean = sum(amts) / len(amts)
