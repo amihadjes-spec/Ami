@@ -194,6 +194,8 @@ During the polling phase, when scanning messages from the **self-chat**:
   * **Rejected** (e.g., "לא", "no", "דוחה", "ביטול", "אל תוסיף", 👎 — "דוחה" kept as a synonym for the same reason as "מאשר" above): Update status to `rejected`, clean it up from `pending_events`, and optionally acknowledge. For `source: "gmail"` entries, also remove `Ami/Event-Pending` from the Gmail thread (see "Gmail-Sourced Proposals").
   * **Modified** (e.g., "תשנה ל-18:00", "change to 6pm"): Extract the new parameters, update the draft in `pending_events`, check conflicts again, and send an updated proposal.
 
+* **Retry of `approved_pending_creation` (added 2026-11-13)**: at the start of this section, before processing new self-chat replies, scan `pending_events` for entries with `status: approved_pending_creation` (set when the user approved but the Google Calendar tool was unavailable in that session). If the Calendar tool is available now, process each one exactly like an **Approved** reply above: final duplicate `list_events` check, create the event (description `מקור:` line ending with `[LINUX]`), send the success confirmation to the self-chat, remove it from `pending_events`, queue a `created` notification, and clear any `calendar-tool-unavailable` entry from `issue_reported`. If the Calendar tool is still unavailable, leave the entry unchanged and do not re-send the alert (`issue_reported` already dedupes it). Deferring with this status is the only allowed way to postpone an approved event; never drop it silently.
+
 ### 4. Expired Proposal Suppression
 
 An event whose date/time has already passed must never trigger an outgoing notification about it — a new `proposal`, a reminder, or anything else — regardless of whether a reply was ever received.
