@@ -51,12 +51,12 @@ The agent manages state using five dedicated Gmail labels (automatically created
 8. **Dispatch Notification:** This agent has no network path to WAHA (it runs as a cloud-hosted routine; WAHA is only reachable on `localhost:3000` on Ami's machine, with no tunnel exposing it — see "WhatsApp Delivery Bridge"). So this step does **not** itself send a WhatsApp message. It only evaluates quiet hours for whatever this agent *can* send directly through its own connectors (e.g. an informational note, if ever needed) — the actual WhatsApp confirmation for `Ami/Event-Pending` threads is sent by a separate local agent that polls this same label.
 
 ## Quiet Hours
-**22:00–07:00 (Asia/Jerusalem timezone, not UTC).**
+**22:00–08:00 (Asia/Jerusalem timezone, not UTC).**
 
 * **Processing Continues:** The hourly cron continues to scan, apply labels, and check conflicts normally during these hours.
 * **Delayed Delivery:** Active push notifications/messages to the user are paused. Proposals receive the `Ami/Event-Notify-Queued` label and are held.
-* **Morning Digest:** In the first hourly run after 07:00, the agent collects all threads marked with `Ami/Event-Notify-Queued` and dispatches **a single consolidated digest message** to the user. After sending, the `Ami/Event-Notify-Queued` label is removed.
-* **No Exceptions:** Urgent or close-proximity events detected during overnight hours are also held until 07:00. Outside of quiet hours, notifications are dispatched instantly.
+* **Morning Digest:** In the first hourly run after 08:00, the agent collects all threads marked with `Ami/Event-Notify-Queued` and dispatches **a single consolidated digest message** to the user. After sending, the `Ami/Event-Notify-Queued` label is removed.
+* **No Exceptions:** Urgent or close-proximity events detected during overnight hours are also held until 08:00. Outside of quiet hours, notifications are dispatched instantly.
 
 ## Confirmation Flow & Event Creation
 When a user responds to a proposal (immediately or in a later session), the agent processes the action as follows:
