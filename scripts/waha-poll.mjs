@@ -299,8 +299,10 @@ async function main() {
       // appears as a candidate at all — revisit this guard if that happens.
       if (typeof m.timestamp !== 'number') continue;
 
-      if (m.fromMe) {
-        if (!isSelfChat) continue;
+      // Messages the user sent in any chat are candidates too (see spec,
+      // "Critical fix - user-sent messages in all chats"). The filtering below
+      // only drops the agent's own proposals in the self-chat.
+      if (m.fromMe && isSelfChat) {
         const hasReply = !!(m.replyTo && m.replyTo.id);
         // m.id from the messages endpoint is WAHA's composite form (e.g.
         // "true_153768486285323@lid_3EB085764D314165CA4DF7_out"), while
@@ -329,6 +331,7 @@ async function main() {
         author: m.author || m.participant || null,
         timestamp: m.timestamp,
         body: m.body,
+        fromMe: !!m.fromMe,
         hasMedia: !!m.hasMedia,
         replyToMessageId: m.replyTo && m.replyTo.id ? m.replyTo.id : null,
       });
@@ -367,8 +370,12 @@ async function main() {
   for (const [chatName, msgs] of digestByChat) {
     digestLines.push('', `## ${chatName} (${msgs.length})`);
     for (const m of msgs) {
-      const snippet = (m.body || '').replace(/\s+/g, ' ').trim().slice(0, 140);
-      digestLines.push(`- [${m.messageId}] ${snippet}`);
+      // User-sent messages are shown (nearly) in full: forwarded notices often
+      // carry the date well past the first 140 characters.
+      const text = (m.body || '').replace(/\s+/g, ' ').trim();
+      const limit = m.fromMe ? 1500 : 140;
+      const snippet = text.slice(0, limit) + (text.length > limit ? ' [truncated]' : '');
+      digestLines.push(`- [${m.messageId}]${m.fromMe ? ' [sent by user]' : ''} ${snippet}`);
     }
   }
   const digestPath = '/tmp/waha-poll-digest.txt';

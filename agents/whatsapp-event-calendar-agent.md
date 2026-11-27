@@ -268,6 +268,15 @@ By default, WAHA polling filters out `fromMe == true` to avoid processing the ag
 
 *(Fixed 2026-07-22: the original rule only kept condition (a), so any message the user typed or pasted fresh into the self-chat — not as a reply to an existing proposal — had no `replyTo.id` and was silently discarded before ever reaching event classification. Confirmed via a real case: an appointment-reminder text pasted into the self-chat was never picked up. Don't revert to "keep only if replyTo.id is valid" — that reintroduces this gap.)*
 
+## Critical fix - user-sent messages in all chats (2026-11-27)
+
+**Rule**: messages the user sent (`fromMe == true`) in any non-muted chat (private or group) are event candidates and go through "Event Detection", dedup and the approval flow exactly like incoming messages. This replaces the earlier default of dropping `fromMe` messages outside the self-chat. The self-chat rule above is unchanged (the agent's own proposals are still discarded).
+
+* For a `fromMe` candidate use the candidate's `chatId` as `chat_id` (not `from`, which is the user's own ID); `chat_name` is the chat it was sent to.
+* In the digest these lines are marked `[sent by user]` and shown nearly in full. Any digest line ending in `[truncated]` has more text: read the full `body` from `candidateMessages` before deciding it has no date or time.
+
+**Incident**: a utility power-outage notice with a date and time range, sent by the user in a private chat, never reached event detection. Do not restore the `if (!isSelfChat) continue` filter.
+
 ## Critical fix — watermark must not jump to "now" on an empty delta fetch (2026-07-16)
 
 **Root cause, confirmed directly against the state file's history rather than assumed**: a "כן" reply to the "גמר המונדיאל - צפייה בפאב החברתי להבים" proposal was sent at 17:09:27, well inside the self-chat's delta fetch window (16:27:45 → run time) of the run that executed at 18:26. That run's own narrative reported "no matching reply seen," and the watermark it saved for the self-chat was 18:24:31 — the run's own approximate start time, not the reply's actual timestamp. That's the signature of the old rule ("if no messages were fetched, use `now`") firing on what was very likely a transient empty result from that one fetch call, not a chat that was genuinely quiet. Once the watermark advanced past 17:09:27, the reply became permanently unreachable — every later run's delta window started after it, so three consecutive runs (18:26, 20:23, 21:28) each correctly reported "no reply seen," none of them wrongly, because the message was already lost by the time each of them polled. A self-chat-ID mix-up was checked and ruled out: the alternate self-chat identifier's watermark never moved during this whole window, confirming the correct ID was used consistently throughout.
